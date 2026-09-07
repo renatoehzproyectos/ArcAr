@@ -1,6 +1,6 @@
 #include "BallPredTracker.h"
 
-RS_NS_START
+AA_NS_START
 
 BallPredTracker::BallPredTracker(Arena* arena, size_t numPredTicks) : numPredTicks(numPredTicks) {
 	// Make ball pred arena
@@ -72,10 +72,10 @@ void BallPredTracker::ForceUpdateAllPred(const BallState& initialBallState) {
 
 BallState BallPredTracker::GetBallStateForTime(float predTime) const {
 	if (predData.empty())
-		RS_ERR_CLOSE("BallPredTracker::GetBallStateForTime(): Predicted ball data is empty, update prediction before calling");
+		AA_ERR_CLOSE("BallPredTracker::GetBallStateForTime(): Predicted ball data is empty, update prediction before calling");
 
-	int index = RS_CLAMP(predTime / ballPredArena->tickTime, 0, predData.size() - 1);
+	int index = AA_CLAMP(predTime / ballPredArena->tickTime, 0, predData.size() - 1);
 	return predData[index];
 }
 
-RS_NS_END
+AA_NS_END

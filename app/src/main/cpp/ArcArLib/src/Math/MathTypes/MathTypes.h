@@ -1,10 +1,10 @@
 #pragma once
 #include "../../BaseInc.h"
 
-RS_NS_START
+AA_NS_START
 
-// RocketSim 3D vector struct
-struct RS_ALIGN_16 Vec {
+// ArcAr 3D vector struct
+struct AA_ALIGN_16 Vec {
 	float x, y, z;
 
 	float _w; // 4th component to get compiler to use SIMD operations
@@ -162,11 +162,11 @@ public:
 };
 
 // Vec needs to be equal in both size and structure layout to btVector3, because they are type-punned to and from
-static_assert(sizeof(Vec) == sizeof(btVector3), "RocketSim Vec size must match btVector3 size");
+static_assert(sizeof(Vec) == sizeof(btVector3), "ArcAr Vec size must match btVector3 size");
 
-// RocketSim 3x3 rotation matrix struct
+// ArcAr 3x3 rotation matrix struct
 // NOTE: Column-major
-struct RS_ALIGN_16 RotMat {
+struct AA_ALIGN_16 RotMat {
 	Vec forward, right, up;
 
 	RotMat() {
@@ -283,8 +283,8 @@ struct RS_ALIGN_16 RotMat {
 	}
 };
 
-// RocketSim euler angle struct
-// Has the same order of application as Rotators in Rocket League (YPR), values are in radians
+// ArcAr euler angle struct
+// Has the same order of application as Rotators in the reference physics model (YPR), values are in radians
 struct Angle {
 	float yaw, pitch, roll;
 
@@ -336,4 +336,4 @@ struct Angle {
 	}
 };
 
-RS_NS_END
+AA_NS_END

@@ -1,13 +1,13 @@
-#include "btVehicleRL.h"
-#include "../../RLConst.h"
+#include "btVehicleGame.h"
+#include "../../GameConst.h"
 #define ROLLING_INFLUENCE_FIX
 
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btDynamicsWorld.h"
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/ConstraintSolver/btContactConstraint.h"
 
-RS_NS_START
+AA_NS_START
 
-btVehicleRL::btVehicleRL(
+btVehicleGame::btVehicleGame(
 	const btVehicleTuning& tuning, 
 	btRigidBody* chassis, btVehicleRaycaster* raycaster, btDynamicsWorld* world, 
 	int addedRayCollisionMask
@@ -20,18 +20,18 @@ btVehicleRL::btVehicleRL(
 	defaultInit(tuning);
 }
 
-void btVehicleRL::defaultInit(const btVehicleTuning& tuning) {
+void btVehicleGame::defaultInit(const btVehicleTuning& tuning) {
 	(void)tuning;
 	m_steeringValue = 0;
 }
 
-btVehicleRL::~btVehicleRL() {
+btVehicleGame::~btVehicleGame() {
 }
 
 //
 // basically most of the code is general for 2 or 4 wheel vehicles, but some of it needs to be reviewed
 //
-btWheelInfoRL& btVehicleRL::addWheel(const btVector3& connectionPointCS, const btVector3& wheelDirectionCS0, const btVector3& wheelAxleCS, float suspensionRestLength, float wheelRadius, const btVehicleTuning& tuning, bool isFrontWheel) {
+btWheelInfoRL& btVehicleGame::addWheel(const btVector3& connectionPointCS, const btVector3& wheelDirectionCS0, const btVector3& wheelAxleCS, float suspensionRestLength, float wheelRadius, const btVehicleTuning& tuning, bool isFrontWheel) {
 	btWheelInfoConstructionInfo ci;
 
 	ci.m_chassisConnectionCS = connectionPointCS;
@@ -56,14 +56,14 @@ btWheelInfoRL& btVehicleRL::addWheel(const btVector3& connectionPointCS, const b
 	return wheel;
 }
 
-const btTransform& btVehicleRL::getWheelTransformWS(int wheelIndex) const {
+const btTransform& btVehicleGame::getWheelTransformWS(int wheelIndex) const {
 	btAssert(wheelIndex < getNumWheels());
 	const btWheelInfoRL& wheel = m_wheelInfo[wheelIndex];
 	return wheel.m_worldTransform;
 }
 
 // See: I20 or I21
-void btVehicleRL::updateWheelTransform(int wheelIndex) {
+void btVehicleGame::updateWheelTransform(int wheelIndex) {
 	btWheelInfoRL& wheel = m_wheelInfo[wheelIndex];
 	updateWheelTransformsWS(wheel);
 	btVector3 up = -wheel.m_raycastInfo.m_wheelDirectionWS;
@@ -93,7 +93,7 @@ void btVehicleRL::updateWheelTransform(int wheelIndex) {
 		wheel.m_raycastInfo.m_hardPointWS + wheel.m_raycastInfo.m_wheelDirectionWS * wheel.m_raycastInfo.m_suspensionLength);
 }
 
-void btVehicleRL::resetSuspension() {
+void btVehicleGame::resetSuspension() {
 	int i;
 	for (i = 0; i < m_wheelInfo.size(); i++) {
 		btWheelInfoRL& wheel = m_wheelInfo[i];
@@ -107,7 +107,7 @@ void btVehicleRL::resetSuspension() {
 }
 
 // See: I20 or I21
-void btVehicleRL::updateWheelTransformsWS(btWheelInfoRL& wheel) {
+void btVehicleGame::updateWheelTransformsWS(btWheelInfoRL& wheel) {
 	wheel.m_raycastInfo.m_isInContact = false;
 	wheel.m_isInContactWithWorld = false;
 
@@ -117,13 +117,13 @@ void btVehicleRL::updateWheelTransformsWS(btWheelInfoRL& wheel) {
 	wheel.m_raycastInfo.m_wheelAxleWS = chassisTrans.getBasis() * wheel.m_wheelAxleCS;
 }
 
-float btVehicleRL::rayCast(btWheelInfoRL& wheel) {
+float btVehicleGame::rayCast(btWheelInfoRL& wheel) {
 	updateWheelTransformsWS(wheel);
 
 	float depth = -1;
 
 	float suspensionTravel = wheel.m_maxSuspensionTravelCm / 100;
-	float realRayLength = wheel.getSuspensionRestLength() + suspensionTravel + wheel.m_wheelsRadius - RLConst::BTVehicle::SUSPENSION_SUBTRACTION;
+	float realRayLength = wheel.getSuspensionRestLength() + suspensionTravel + wheel.m_wheelsRadius - GameConst::BTVehicle::SUSPENSION_SUBTRACTION;
 
 	// See: I21
 	btVector3 source = wheel.m_raycastInfo.m_hardPointWS;
@@ -179,7 +179,7 @@ float btVehicleRL::rayCast(btWheelInfoRL& wheel) {
 		}
 
 		if (object->isStaticObject()) { // Compute m_extraPushback when colliding with static object
-			float rayPushbackThresh = (wheel.m_suspensionRestLength1 + wheel.m_wheelsRadius) - RLConst::BTVehicle::SUSPENSION_SUBTRACTION;
+			float rayPushbackThresh = (wheel.m_suspensionRestLength1 + wheel.m_wheelsRadius) - GameConst::BTVehicle::SUSPENSION_SUBTRACTION;
 			if (wheelTraceLenSq < rayPushbackThresh) {
 
 				float wheelTraceDistDelta = wheelTraceLenSq - rayPushbackThresh;
@@ -208,11 +208,11 @@ float btVehicleRL::rayCast(btWheelInfoRL& wheel) {
 	return depth;
 }
 
-const btTransform& btVehicleRL::getChassisWorldTransform() const {
+const btTransform& btVehicleGame::getChassisWorldTransform() const {
 	return getRigidBody()->getCenterOfMassTransform();
 }
 
-void btVehicleRL::updateVehicleFirst(float step) {
+void btVehicleGame::updateVehicleFirst(float step) {
 
 	for (int i = 0; i < getNumWheels(); i++)
 		updateWheelTransform(i);
@@ -227,47 +227,47 @@ void btVehicleRL::updateVehicleFirst(float step) {
 	calcFrictionImpulses(step);
 }
 
-void btVehicleRL::updateVehicleSecond(float step) {
+void btVehicleGame::updateVehicleSecond(float step) {
 	updateSuspension(step);
 	applyFrictionImpulses(step);
 }
 
-void btVehicleRL::setSteeringValue(float steering, int wheel) {
+void btVehicleGame::setSteeringValue(float steering, int wheel) {
 	btAssert(wheel >= 0 && wheel < getNumWheels());
 
 	btWheelInfoRL& wheelInfo = getWheelInfo(wheel);
 	wheelInfo.m_steering = steering;
 }
 
-float btVehicleRL::getSteeringValue(int wheel) const {
+float btVehicleGame::getSteeringValue(int wheel) const {
 	return getWheelInfo(wheel).m_steering;
 }
 
-void btVehicleRL::applyEngineForce(float force, int wheel) {
+void btVehicleGame::applyEngineForce(float force, int wheel) {
 	btAssert(wheel >= 0 && wheel < getNumWheels());
 	btWheelInfoRL& wheelInfo = getWheelInfo(wheel);
 	wheelInfo.m_engineForce = force;
 }
 
-const btWheelInfoRL& btVehicleRL::getWheelInfo(int index) const {
+const btWheelInfoRL& btVehicleGame::getWheelInfo(int index) const {
 	btAssert((index >= 0) && (index < getNumWheels()));
 
 	return m_wheelInfo[index];
 }
 
-btWheelInfoRL& btVehicleRL::getWheelInfo(int index) {
+btWheelInfoRL& btVehicleGame::getWheelInfo(int index) {
 	btAssert((index >= 0) && (index < getNumWheels()));
 
 	return m_wheelInfo[index];
 }
 
-void btVehicleRL::setBrake(float brake, int wheelIndex) {
+void btVehicleGame::setBrake(float brake, int wheelIndex) {
 	btAssert((wheelIndex >= 0) && (wheelIndex < getNumWheels()));
 	getWheelInfo(wheelIndex).m_brake = brake;
 }
 
 // See: I24
-void btVehicleRL::updateSuspension(float deltaTime) {
+void btVehicleGame::updateSuspension(float deltaTime) {
 	
 	for (int i = 0; i < getNumWheels(); i++) {
 		btWheelInfoRL& wheel_info = m_wheelInfo[i];
@@ -282,7 +282,7 @@ void btVehicleRL::updateSuspension(float deltaTime) {
 			wheel_info.m_wheelsSuspensionForce = force - (dampingVelScale * wheel_info.m_suspensionRelativeVelocity);
 			wheel_info.m_wheelsSuspensionForce *= wheel_info.m_suspensionForceScale;
 
-			// RL never uses downwards suspension forces
+			// The reference implementation never uses downwards suspension forces
 			if (wheel_info.m_wheelsSuspensionForce < 0)
 				wheel_info.m_wheelsSuspensionForce = 0;
 
@@ -303,7 +303,7 @@ void btVehicleRL::updateSuspension(float deltaTime) {
 }
 
 // See: I25
-void btVehicleRL::calcFrictionImpulses(float timeStep) {
+void btVehicleGame::calcFrictionImpulses(float timeStep) {
 
 	float frictionScale = m_chassisBody->getMass() / 3;
 
@@ -361,7 +361,7 @@ void btVehicleRL::calcFrictionImpulses(float timeStep) {
 					// TODO: No idea where this number comes from or how it was calculated lol
 					constexpr float ROLLING_FRICTION_SCALE_MAGIC = 113.73963f;
 
-					rollingFriction = RS_CLAMP(-relVel * ROLLING_FRICTION_SCALE_MAGIC, -wheel.m_brake, wheel.m_brake);
+					rollingFriction = AA_CLAMP(-relVel * ROLLING_FRICTION_SCALE_MAGIC, -wheel.m_brake, wheel.m_brake);
 				} else {
 					// Don't apply friction when driving with no brake
 					rollingFriction = 0;
@@ -380,7 +380,7 @@ void btVehicleRL::calcFrictionImpulses(float timeStep) {
 }
 
 // See: I25
-void btVehicleRL::applyFrictionImpulses(float timeStep) {
+void btVehicleGame::applyFrictionImpulses(float timeStep) {
 	// Apply impulses
 	btVector3 upDir = m_chassisBody->getWorldTransform().getBasis().getColumn(m_indexUpAxis);
 	for (int i = 0; i < m_wheelInfo.size(); i++) {
@@ -394,7 +394,7 @@ void btVehicleRL::applyFrictionImpulses(float timeStep) {
 	}
 }
 
-btVector3 btVehicleRL::getUpwardsDirFromWheelContacts() {
+btVector3 btVehicleGame::getUpwardsDirFromWheelContacts() {
 	btVector3 sumContactDir = btVector3(0, 0, 0);
 	for (int i = 0; i < m_wheelInfo.size(); i++)
 		if (m_wheelInfo[i].m_raycastInfo.m_isInContact)
@@ -409,8 +409,8 @@ btVector3 btVehicleRL::getUpwardsDirFromWheelContacts() {
 	}
 }
 
-float btVehicleRL::getForwardSpeed() {
+float btVehicleGame::getForwardSpeed() {
 	return m_chassisBody->getLinearVelocity().dot(getForwardVector());
 }
 
-RS_NS_END
+AA_NS_END

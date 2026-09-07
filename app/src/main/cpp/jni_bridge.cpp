@@ -1,72 +1,99 @@
-// jni_bridge.cpp
-//
-// The only Android/JNI-specific file in this project. It does not modify
-// the ArcAr physics library (upstream RocketSim source) in any way - it
-// just calls its public API and reports the result back to Java as a
-// string (logged via Logcat by MainActivity).
+// jni_bridge.cpp — JNI surface for the playable ArcAr client
 
 #include <jni.h>
-
-#include <chrono>
-#include <sstream>
 #include <android/log.h>
+#include <string>
 
-#include "RocketSim.h"
+#include "game_engine.h"
+#include "Sim/CarControls.h"
 
 #define LOG_TAG "ArcArNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 
-using namespace RocketSim;
+using namespace ArcAr;
 
-extern "C"
-JNIEXPORT jstring JNICALL
-Java_com_arcar_android_MainActivity_runArcAr(JNIEnv* env, jclass /* clazz */,
-                                              jstring meshesDirJava) {
-	std::ostringstream out;
+extern "C" {
 
-	const char* meshesDirChars = env->GetStringUTFChars(meshesDirJava, nullptr);
-	std::string meshesDir(meshesDirChars);
-	env->ReleaseStringUTFChars(meshesDirJava, meshesDirChars);
-
-	try {
-		// Loads real Rocket League arena collision meshes if present at
-		// <app files dir>/collision_meshes/<Mode>/*.cmf. If the folder is
-		// empty or missing, Init() still succeeds - it just means the arena
-		// will have no field geometry, which Arena::Create() then reports
-		// as an exception (caught below) rather than crashing.
-		RocketSim::Init(meshesDir, /* silent */ false);
-
-		out << "ArcAr (RocketSim core) v" << RS_VERSION << " initialized OK.\n";
-		out << "Collision meshes dir: " << meshesDir << "\n";
-
-		Arena* arena = Arena::Create(GameMode::SOCCAR);
-		arena->AddCar(Team::BLUE);
-		arena->AddCar(Team::ORANGE);
-
-		constexpr uint64_t NUM_TICKS = 100'000;
-
-		auto startTime = std::chrono::high_resolution_clock::now();
-		for (uint64_t i = 0; i < NUM_TICKS; i++)
-			arena->Step();
-		auto endTime = std::chrono::high_resolution_clock::now();
-
-		double seconds = std::chrono::duration<double>(endTime - startTime).count();
-		double ticksPerSecond = NUM_TICKS / seconds;
-		double simSecondsPerRealSecond = ticksPerSecond * arena->tickTime;
-
-		out << "Simulated " << NUM_TICKS << " ticks in " << seconds << "s\n";
-		out << "-> " << (uint64_t)ticksPerSecond << " ticks/sec"
-		    << " (~" << simSecondsPerRealSecond << "x realtime)\n";
-		out << "Final tickCount=" << arena->tickCount;
-
-		delete arena;
-	} catch (const std::exception& e) {
-		out << "ArcAr run threw an exception: " << e.what();
-	} catch (...) {
-		out << "ArcAr run threw an unknown exception.";
-	}
-
-	std::string result = out.str();
-	LOGI("%s", result.c_str());
-	return env->NewStringUTF(result.c_str());
+JNIEXPORT jboolean JNICALL
+Java_com_arcar_android_NativeBridge_nativeInit(JNIEnv* env, jclass, jstring meshesDirJava) {
+	const char* c = env->GetStringUTFChars(meshesDirJava, nullptr);
+	std::string meshesDir = c ? c : "";
+	env->ReleaseStringUTFChars(meshesDirJava, c);
+	bool ok = GameEngine::Instance().Init(meshesDir);
+	return ok ? JNI_TRUE : JNI_FALSE;
 }
+
+JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeShutdown(JNIEnv*, jclass) {
+	GameEngine::Instance().Shutdown();
+}
+
+JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeSetControls(
+		JNIEnv*, jclass,
+		jfloat throttle, jfloat steer,
+		jfloat pitch, jfloat yaw, jfloat roll,
+		jboolean jump, jboolean boost, jboolean handbrake) {
+	CarControls c;
+	c.throttle = throttle;
+	c.steer = steer;
+	c.pitch = pitch;
+	c.yaw = yaw;
+	c.roll = roll;
+	c.jump = jump == JNI_TRUE;
+	c.boost = boost == JNI_TRUE;
+	c.handbrake = handbrake == JNI_TRUE;
+	GameEngine::Instance().SetControls(c);
+}
+
+JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeToggleBallCam(JNIEnv*, jclass) {
+	GameEngine::Instance().ToggleBallCam();
+}
+
+JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeSetBallCam(JNIEnv*, jclass, jboolean on) {
+	GameEngine::Instance().SetBallCam(on == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeReset(JNIEnv*, jclass) {
+	GameEngine::Instance().ResetToKickoff();
+}
+
+JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeUpdate(JNIEnv*, jclass, jfloat dt) {
+	GameEngine::Instance().Update(dt);
+}
+
+// float[30] snapshot layout — see NativeBridge.java
+JNIEXPORT jboolean JNICALL
+Java_com_arcar_android_NativeBridge_nativeGetSnapshot(JNIEnv* env, jclass, jfloatArray outArr) {
+	if (!outArr) return JNI_FALSE;
+	const jsize len = env->GetArrayLength(outArr);
+	if (len < 30) return JNI_FALSE;
+
+	RenderSnapshot s = GameEngine::Instance().GetSnapshot();
+	jfloat buf[30];
+	buf[0] = s.carPos[0]; buf[1] = s.carPos[1]; buf[2] = s.carPos[2];
+	buf[3] = s.carForward[0]; buf[4] = s.carForward[1]; buf[5] = s.carForward[2];
+	buf[6] = s.carUp[0]; buf[7] = s.carUp[1]; buf[8] = s.carUp[2];
+	buf[9] = s.carRight[0]; buf[10] = s.carRight[1]; buf[11] = s.carRight[2];
+	buf[12] = s.ballPos[0]; buf[13] = s.ballPos[1]; buf[14] = s.ballPos[2];
+	buf[15] = s.ballRadius;
+	buf[16] = s.camPos[0]; buf[17] = s.camPos[1]; buf[18] = s.camPos[2];
+	buf[19] = s.camTarget[0]; buf[20] = s.camTarget[1]; buf[21] = s.camTarget[2];
+	buf[22] = s.boost;
+	buf[23] = s.speedUU;
+	buf[24] = s.ballCam ? 1.f : 0.f;
+	buf[25] = s.onGround ? 1.f : 0.f;
+	buf[26] = s.isBoosting ? 1.f : 0.f;
+	buf[27] = s.isSupersonic ? 1.f : 0.f;
+	buf[28] = (float)(s.tick % 1000000ULL);
+	buf[29] = s.ready ? 1.f : 0.f;
+
+	env->SetFloatArrayRegion(outArr, 0, 30, buf);
+	return s.ready ? JNI_TRUE : JNI_FALSE;
+}
+
+} // extern "C"

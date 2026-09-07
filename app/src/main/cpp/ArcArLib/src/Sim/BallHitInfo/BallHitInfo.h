@@ -1,10 +1,10 @@
 #pragma once
 
-#include "../../RLConst.h"
+#include "../../GameConst.h"
 #include "../../DataStream/DataStreamIn.h"
 #include "../../DataStream/DataStreamOut.h"
 
-RS_NS_START
+AA_NS_START
 
 struct BallHitInfo {
 	// If false, all other fields within this struct should not be trusted
@@ -29,4 +29,4 @@ struct BallHitInfo {
 #define BALLHITINFO_SERIALIZATION_FIELDS \
 relativePosOnBall, ballPos, extraHitVel, tickCountWhenHit, tickCountWhenExtraImpulseApplied
 
-RS_NS_END
+AA_NS_END

@@ -1,6 +1,6 @@
 #include "GameEventTracker.h"
 
-RS_NS_START
+AA_NS_START
 
 bool GetShooterPasser(Arena* arena, Team team, Car*& shooterOut, bool findPasser, Car*& passerOut, uint64_t maxShooterTicks, uint64_t maxPasserTicks) {
 	shooterOut = passerOut = NULL;
@@ -65,7 +65,7 @@ void GameEventTracker::Update(Arena* arena) {
 			Car* passer;
 			if (GetShooterPasser(
 				arena,
-				RS_TEAM_FROM_Y(-arena->ball->_rigidBody.getWorldTransform().m_origin.y()),
+				AA_TEAM_FROM_Y(-arena->ball->_rigidBody.getWorldTransform().m_origin.y()),
 				shooter, true, passer,
 				config.goalMaxTouchTime * tickrate,
 				config.passMaxTouchTime * tickrate
@@ -78,7 +78,7 @@ void GameEventTracker::Update(Arena* arena) {
 			if (!_ballShot) { // Ball is not currently shot
 
 				if (_shotCooldown > 0) {
-					_shotCooldown = RS_MAX(_shotCooldown - deltaTime, 0);
+					_shotCooldown = AA_MAX(_shotCooldown - deltaTime, 0);
 					// Can't make a shot yet
 				} else {
 
@@ -86,7 +86,7 @@ void GameEventTracker::Update(Arena* arena) {
 					if (speedSq >= config.shotMinSpeed * config.shotMinSpeed) {
 						Team goalTeam;
 						if (arena->IsBallProbablyGoingIn(config.shotMinScoreTime, config.predScoreExtraMargin, &goalTeam)) {
-							Team shooterTeam = RS_OPPOSITE_TEAM(goalTeam);
+							Team shooterTeam = AA_OPPOSITE_TEAM(goalTeam);
 
 							uint64_t shotMinTouchDelayTicks = config.shotTouchMinDelay * tickrate;
 
@@ -165,4 +165,4 @@ void GameEventTracker::ResetPersistentInfo() {
 	// _ballShotGoalTeam doesn't need to be reset
 }
 
-RS_NS_END
+AA_NS_END

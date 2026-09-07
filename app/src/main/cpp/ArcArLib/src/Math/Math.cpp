@@ -1,6 +1,6 @@
 #include "Math.h"
 
-RS_NS_START
+AA_NS_START
 
 float LinearPieceCurve::GetOutput(float input, float defaultOutput) const {
 	float output = input;
@@ -58,7 +58,7 @@ float Math::RandFloat(float min, float max) {
 
 std::default_random_engine& Math::GetRandEngine() {
 	static thread_local auto hashThreadID = std::hash<std::thread::id>();
-	static thread_local uint64_t seed = RS_CUR_MS() + hashThreadID(std::this_thread::get_id());
+	static thread_local uint64_t seed = AA_CUR_MS() + hashThreadID(std::this_thread::get_id());
 	static thread_local std::default_random_engine randEngine = std::default_random_engine(seed);
 	return randEngine;
 }
@@ -90,4 +90,4 @@ Angle Math::RoundAngleUE3(Angle ang) {
 	return ang;
 }
 
-RS_NS_END
+AA_NS_END

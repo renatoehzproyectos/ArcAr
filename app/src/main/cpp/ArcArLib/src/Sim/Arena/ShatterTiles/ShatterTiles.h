@@ -1,10 +1,10 @@
 #pragma once
-#include "../../../RLConst.h"
+#include "../../../GameConst.h"
 #include "../../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btRigidBody.h"
 
-RS_NS_START
+AA_NS_START
 
-struct DropshotTileState {
+struct ShatterTileState {
 	enum {
 		STATE_FULL = 0,
 		STATE_DAMAGED,
@@ -13,25 +13,25 @@ struct DropshotTileState {
 	uint8_t damageState = STATE_FULL;
 };
 
-struct DropshotTilesState {
+struct ShatterTilesState {
 	enum {
 		STATE_FULL = 0,
 		STATE_DAMAGED,
 		STATE_BROKEN
 	};
 
-	DropshotTileState states[RLConst::Dropshot::TEAM_AMOUNT][RLConst::Dropshot::NUM_TILES_PER_TEAM];
+	ShatterTileState states[GameConst::Shatter::TEAM_AMOUNT][GameConst::Shatter::NUM_TILES_PER_TEAM];
 
-	DropshotTilesState() {
-		for (int i = 0; i < RLConst::Dropshot::TEAM_AMOUNT; i++)
-			for (int j = 0; j < RLConst::Dropshot::NUM_TILES_PER_TEAM; j++)
-				states[i][j] = DropshotTileState();
+	ShatterTilesState() {
+		for (int i = 0; i < GameConst::Shatter::TEAM_AMOUNT; i++)
+			for (int j = 0; j < GameConst::Shatter::NUM_TILES_PER_TEAM; j++)
+				states[i][j] = ShatterTileState();
 	}
 
 	// TODO: Add serialization
 };
 
-namespace DropshotTiles {
+namespace ShatterTiles {
 	void Init();
 
 	Vec GetTilePos(int team, int index);
@@ -39,4 +39,4 @@ namespace DropshotTiles {
 	std::vector<int> GetNeighborIndices(int startIdx, int radius);
 };
 
-RS_NS_END
+AA_NS_END

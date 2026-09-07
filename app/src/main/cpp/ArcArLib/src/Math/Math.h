@@ -1,7 +1,7 @@
 #pragma once
 #include "../BaseInc.h"
 
-RS_NS_START
+AA_NS_START
 
 struct LinearPieceCurve {
 	std::map<float, float> valueMappings;
@@ -26,4 +26,4 @@ namespace Math {
 	Angle RoundAngleUE3(Angle ang);
 }
 
-RS_NS_END
+AA_NS_END

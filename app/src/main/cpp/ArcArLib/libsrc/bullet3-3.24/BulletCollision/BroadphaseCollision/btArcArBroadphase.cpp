@@ -13,7 +13,7 @@ subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 */
 
-#include "btRSBroadphase.h"
+#include "btArcArBroadphase.h"
 #include "btDispatcher.h"
 #include "btCollisionAlgorithm.h"
 
@@ -30,9 +30,9 @@ subject to the following restrictions:
 #include <iostream>
 #include <mutex>
 
-#define THROW_ERR(msg) { std::string fullMsg = std::string() + "btRSBroadphase fatal error: " msg; std::cout << msg << std::endl; throw std::runtime_error(fullMsg); }
+#define THROW_ERR(msg) { std::string fullMsg = std::string() + "btArcArBroadphase fatal error: " msg; std::cout << msg << std::endl; throw std::runtime_error(fullMsg); }
 
-void btRSBroadphase::validate() {
+void btArcArBroadphase::validate() {
 	for (int i = 0; i < m_numHandles; i++) {
 		for (int j = i + 1; j < m_numHandles; j++) {
 			btAssert(&m_pHandles[i] != &m_pHandles[j]);
@@ -40,7 +40,7 @@ void btRSBroadphase::validate() {
 	}
 }
 
-btRSBroadphase::btRSBroadphase(btVector3 min, btVector3 max, float cellSize, btOverlappingPairCache* overlappingPairCache, int maxProxies)
+btArcArBroadphase::btArcArBroadphase(btVector3 min, btVector3 max, float cellSize, btOverlappingPairCache* overlappingPairCache, int maxProxies)
 	: m_pairCache(overlappingPairCache),
 	m_ownsPairCache(false),
 	m_invalidPair(0) {
@@ -49,8 +49,8 @@ btRSBroadphase::btRSBroadphase(btVector3 min, btVector3 max, float cellSize, btO
 		THROW_ERR("overlappingPairCache is NULL");
 
 	// allocate handles buffer and put all handles on free list
-	m_pHandlesRawPtr = btAlignedAlloc(sizeof(btRSBroadphaseProxy) * maxProxies, 16);
-	m_pHandles = new (m_pHandlesRawPtr) btRSBroadphaseProxy[maxProxies];
+	m_pHandlesRawPtr = btAlignedAlloc(sizeof(btArcArBroadphaseProxy) * maxProxies, 16);
+	m_pHandles = new (m_pHandlesRawPtr) btArcArBroadphaseProxy[maxProxies];
 	m_maxHandles = maxProxies;
 	m_numHandles = 0;
 	m_firstFreeHandle = 0;
@@ -83,7 +83,7 @@ btRSBroadphase::btRSBroadphase(btVector3 min, btVector3 max, float cellSize, btO
 	cells = std::vector<Cell>(totalCells);
 }
 
-btRSBroadphase::~btRSBroadphase() {
+btArcArBroadphase::~btArcArBroadphase() {
 	btAlignedFree(m_pHandlesRawPtr);
 
 	if (m_ownsPairCache) {
@@ -93,7 +93,7 @@ btRSBroadphase::~btRSBroadphase() {
 }
 
 template <bool ADD>
-void _UpdateCellsStatic(btRSBroadphase* _this, btRSBroadphaseProxy* proxy) {
+void _UpdateCellsStatic(btArcArBroadphase* _this, btArcArBroadphaseProxy* proxy) {
 
 	// Fix dumb massive value aabb bug
 	btVector3 aabbMax = proxy->m_aabbMax;
@@ -126,7 +126,7 @@ void _UpdateCellsStatic(btRSBroadphase* _this, btRSBroadphaseProxy* proxy) {
 	for (int i = iMin; i <= iMax; i++) {
 		for (int j = jMin; j <= jMax; j++) {
 			for (int k = kMin; k <= kMax; k++) {
-				std::vector<btRSBroadphase::Cell*> cells = {};
+				std::vector<btArcArBroadphase::Cell*> cells = {};
 				for (int i1 = -1; i1 <= 1; i1++) {
 					for (int j1 = -1; j1 <= 1; j1++) {
 						for (int k1 = -1; k1 <= 1; k1++) {
@@ -182,7 +182,7 @@ void _UpdateCellsStatic(btRSBroadphase* _this, btRSBroadphaseProxy* proxy) {
 }
 
 template <bool ADD>
-void _UpdateCellsDynamic(btRSBroadphase* _this, btRSBroadphaseProxy* proxy, int ci, int cj, int ck) {
+void _UpdateCellsDynamic(btArcArBroadphase* _this, btArcArBroadphaseProxy* proxy, int ci, int cj, int ck) {
 
 	int mni = btMax(0, ci - 1), mnj = btMax(0, cj - 1), mnk = btMax(0, ck - 1);
 	int mxi = btMin(_this->cellsX - 1, ci + 1), mxj = btMin(_this->cellsY - 1, cj + 1), mxk = btMin(_this->cellsZ - 1, ck + 1);
@@ -201,7 +201,7 @@ void _UpdateCellsDynamic(btRSBroadphase* _this, btRSBroadphaseProxy* proxy, int 
 	}
 }
 
-btBroadphaseProxy* btRSBroadphase::createProxy(const btVector3& aabbMin, const btVector3& aabbMax, int shapeType, void* userPtr, int collisionFilterGroup, int collisionFilterMask, btCollisionDispatcher* /*dispatcher*/) {
+btBroadphaseProxy* btArcArBroadphase::createProxy(const btVector3& aabbMin, const btVector3& aabbMax, int shapeType, void* userPtr, int collisionFilterGroup, int collisionFilterMask, btCollisionDispatcher* /*dispatcher*/) {
 	if (m_numHandles >= m_maxHandles) {
 		THROW_ERR("Max handles exceeded when creating proxy");
 	}
@@ -215,7 +215,7 @@ btBroadphaseProxy* btRSBroadphase::createProxy(const btVector3& aabbMin, const b
 	int iIdx, jIdx, kIdx;
 	GetCellIndices(aabbMin, iIdx, jIdx, kIdx);
 
-	btRSBroadphaseProxy* proxy = new (&m_pHandles[newHandleIndex]) btRSBroadphaseProxy(
+	btArcArBroadphaseProxy* proxy = new (&m_pHandles[newHandleIndex]) btArcArBroadphaseProxy(
 		aabbMin, aabbMax, shapeType, userPtr, collisionFilterGroup, collisionFilterMask, 
 		isStatic, 
 		cellIdx, iIdx, jIdx, kIdx
@@ -255,15 +255,15 @@ public:
 
 protected:
 	virtual bool processOverlap(btBroadphasePair& pair) {
-		btRSBroadphaseProxy* proxy0 = static_cast<btRSBroadphaseProxy*>(pair.m_pProxy0);
-		btRSBroadphaseProxy* proxy1 = static_cast<btRSBroadphaseProxy*>(pair.m_pProxy1);
+		btArcArBroadphaseProxy* proxy0 = static_cast<btArcArBroadphaseProxy*>(pair.m_pProxy0);
+		btArcArBroadphaseProxy* proxy1 = static_cast<btArcArBroadphaseProxy*>(pair.m_pProxy1);
 
 		return ((m_targetProxy == proxy0 || m_targetProxy == proxy1));
 	};
 };
 
-void btRSBroadphase::destroyProxy(btBroadphaseProxy* proxyOrg, btCollisionDispatcher* dispatcher) {
-	btRSBroadphaseProxy* sbp = getRSProxyFromProxy(proxyOrg);
+void btArcArBroadphase::destroyProxy(btBroadphaseProxy* proxyOrg, btCollisionDispatcher* dispatcher) {
+	btArcArBroadphaseProxy* sbp = getArcArProxyFromProxy(proxyOrg);
 	m_pairCache->removeOverlappingPairsContainingProxy(proxyOrg, dispatcher);
 	
 	if (sbp->isStatic) {
@@ -273,18 +273,18 @@ void btRSBroadphase::destroyProxy(btBroadphaseProxy* proxyOrg, btCollisionDispat
 		numDynProxies--;
 	}
 
-	btRSBroadphaseProxy* proxy0 = static_cast<btRSBroadphaseProxy*>(proxyOrg);
+	btArcArBroadphaseProxy* proxy0 = static_cast<btArcArBroadphaseProxy*>(proxyOrg);
 	freeHandle(proxy0);
 }
 
-void btRSBroadphase::getAabb(btBroadphaseProxy* proxy, btVector3& aabbMin, btVector3& aabbMax) const {
-	const btRSBroadphaseProxy* sbp = getRSProxyFromProxy(proxy);
+void btArcArBroadphase::getAabb(btBroadphaseProxy* proxy, btVector3& aabbMin, btVector3& aabbMax) const {
+	const btArcArBroadphaseProxy* sbp = getArcArProxyFromProxy(proxy);
 	aabbMin = sbp->m_aabbMin;
 	aabbMax = sbp->m_aabbMax;
 }
 
-void btRSBroadphase::setAabb(btBroadphaseProxy* proxy, const btVector3& aabbMin, const btVector3& aabbMax, btCollisionDispatcher* /*dispatcher*/) {
-	btRSBroadphaseProxy* sbp = getRSProxyFromProxy(proxy);
+void btArcArBroadphase::setAabb(btBroadphaseProxy* proxy, const btVector3& aabbMin, const btVector3& aabbMax, btCollisionDispatcher* /*dispatcher*/) {
+	btArcArBroadphaseProxy* sbp = getArcArProxyFromProxy(proxy);
 	
 	if (sbp->m_aabbMin != aabbMin || sbp->m_aabbMax != aabbMax) {
 		if (sbp->isStatic) {
@@ -322,7 +322,7 @@ void btRSBroadphase::setAabb(btBroadphaseProxy* proxy, const btVector3& aabbMin,
 	}
 }
 
-void btRSBroadphase::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btBroadphaseRayCallback& rayCallback, const btVector3& aabbMin, const btVector3& aabbMax) {
+void btArcArBroadphase::rayTest(const btVector3& rayFrom, const btVector3& rayTo, btBroadphaseRayCallback& rayCallback, const btVector3& aabbMin, const btVector3& aabbMax) {
 	float rayLenSq = rayFrom.distance2(rayTo);
 
 	if (rayLenSq < cellSizeSq) {
@@ -339,15 +339,15 @@ void btRSBroadphase::rayTest(const btVector3& rayFrom, const btVector3& rayTo, b
 		std::call_once(onceFlag, 
 			[this]() {
 				std::cout <<
-					"[!] btRSBroadphase WARNING:" <<
-					"\nRay casts in RocketSim that are longer than " << this->cellSize << "uu are very expensive and not properly optimized." <<
-					"\nIf you have a project that requires these long rays, tell ZealanL to implement proper DDA for the custom voxel broadphase." <<
+					"[!] btArcArBroadphase WARNING:" <<
+					"\nRay casts in ArcAr that are longer than " << this->cellSize << "uu are very expensive and not properly optimized." <<
+					"\nIf you have a project that requires these long rays, consider implementing proper DDA for the custom voxel broadphase." <<
 					std::endl;
 			}
 		);
 
 		for (int i = 0; i <= m_LastHandleIndex; i++) {
-			btRSBroadphaseProxy* proxy = &m_pHandles[i];
+			btArcArBroadphaseProxy* proxy = &m_pHandles[i];
 			if (!proxy->m_clientObject) {
 				continue;
 			}
@@ -356,11 +356,11 @@ void btRSBroadphase::rayTest(const btVector3& rayFrom, const btVector3& rayTo, b
 	}
 }
 
-void btRSBroadphase::aabbTest(const btVector3& aabbMin, const btVector3& aabbMax, btBroadphaseAabbCallback& callback) {
+void btArcArBroadphase::aabbTest(const btVector3& aabbMin, const btVector3& aabbMax, btBroadphaseAabbCallback& callback) {
 	// TODO: Optimize
 
 	for (int i = 0; i <= m_LastHandleIndex; i++) {
-		btRSBroadphaseProxy* proxy = &m_pHandles[i];
+		btArcArBroadphaseProxy* proxy = &m_pHandles[i];
 		if (!proxy->m_clientObject)
 			continue;
 		
@@ -370,7 +370,7 @@ void btRSBroadphase::aabbTest(const btVector3& aabbMin, const btVector3& aabbMax
 	}
 }
 
-bool btRSBroadphase::aabbOverlap(btRSBroadphaseProxy* proxy0, btRSBroadphaseProxy* proxy1) {
+bool btArcArBroadphase::aabbOverlap(btArcArBroadphaseProxy* proxy0, btArcArBroadphaseProxy* proxy1) {
 	return TestAabbAgainstAabb2(proxy0->m_aabbMin, proxy0->m_aabbMax, proxy1->m_aabbMin, proxy1->m_aabbMax);
 }
 
@@ -379,7 +379,7 @@ class CheckOverlapCallback : public btOverlapCallback
 {
 public:
 	virtual bool processOverlap(btBroadphasePair& pair) {
-		return (!btRSBroadphase::aabbOverlap(static_cast<btRSBroadphaseProxy*>(pair.m_pProxy0), static_cast<btRSBroadphaseProxy*>(pair.m_pProxy1)));
+		return (!btArcArBroadphase::aabbOverlap(static_cast<btArcArBroadphaseProxy*>(pair.m_pProxy0), static_cast<btArcArBroadphaseProxy*>(pair.m_pProxy1)));
 	}
 };
 
@@ -389,7 +389,7 @@ std::string ToStr(const btVector3& vec) {
 	return stream.str();
 }
 
-void btRSBroadphase::calculateOverlappingPairs(btCollisionDispatcher* dispatcher) {
+void btArcArBroadphase::calculateOverlappingPairs(btCollisionDispatcher* dispatcher) {
 
 	int lastRealPairs = totalRealPairs;
 
@@ -408,7 +408,7 @@ void btRSBroadphase::calculateOverlappingPairs(btCollisionDispatcher* dispatcher
 
 		int new_largest_index = -1;
 		for (int i = 0; i <= m_LastHandleIndex; i++) {
-			btRSBroadphaseProxy* proxy = &m_pHandles[i];
+			btArcArBroadphaseProxy* proxy = &m_pHandles[i];
 			if (proxy->isStatic)
 				continue; // TODO: Use separate list
 
@@ -467,12 +467,12 @@ void btRSBroadphase::calculateOverlappingPairs(btCollisionDispatcher* dispatcher
 	}
 }
 
-bool btRSBroadphase::testAabbOverlap(btBroadphaseProxy* proxy0, btBroadphaseProxy* proxy1) {
-	btRSBroadphaseProxy* p0 = getRSProxyFromProxy(proxy0);
-	btRSBroadphaseProxy* p1 = getRSProxyFromProxy(proxy1);
+bool btArcArBroadphase::testAabbOverlap(btBroadphaseProxy* proxy0, btBroadphaseProxy* proxy1) {
+	btArcArBroadphaseProxy* p0 = getArcArProxyFromProxy(proxy0);
+	btArcArBroadphaseProxy* p1 = getArcArProxyFromProxy(proxy1);
 	return aabbOverlap(p0, p1);
 }
 
-void btRSBroadphase::resetPool(btCollisionDispatcher* dispatcher) {
+void btArcArBroadphase::resetPool(btCollisionDispatcher* dispatcher) {
 	// TODO: ?
 }

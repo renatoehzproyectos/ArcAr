@@ -3,9 +3,9 @@
 
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Vehicle/btDefaultVehicleRaycaster.h"
 
-RS_NS_START
+AA_NS_START
 
-// This is a modified version of btWheelInfo to more accurately follow Rocket League
+// This is a modified version of btWheelInfo to more accurately follow the reference vehicle physics model
 struct btWheelInfoRL : public btWheelInfo {
 	bool m_isInContactWithWorld = false;
 	float m_steerAngle = 0;
@@ -26,8 +26,8 @@ struct btWheelInfoRL : public btWheelInfo {
 	btWheelInfoRL(btWheelInfoConstructionInfo& constructionInfo) : btWheelInfo(constructionInfo) {}
 };
 
-// This is a modified version of btRaycastVehicle to more accurately follow Rocket League
-class btVehicleRL : public btActionInterface {
+// This is a modified version of btRaycastVehicle to more accurately follow the reference vehicle physics model
+class btVehicleGame : public btActionInterface {
 public:
 	btAlignedObjectArray<btVector3> m_forwardWS;
 	btAlignedObjectArray<btVector3> m_axle;
@@ -72,17 +72,17 @@ public:
 
 	void defaultInit(const btVehicleTuning& tuning);
 
-	btVehicleRL() {}
+	btVehicleGame() {}
 
-	btVehicleRL(const btVehicleTuning& tuning,
+	btVehicleGame(const btVehicleTuning& tuning,
 		btRigidBody* chassis, btVehicleRaycaster* raycaster, btDynamicsWorld* world,
 		int addedRayCollisionMask);
 
-	virtual ~btVehicleRL();
+	virtual ~btVehicleGame();
 
 	///btActionInterface interface
 	void updateAction(btCollisionWorld* collisionWorld, float step) {
-		assert(false); // This should never be hit in RocketSim!
+		assert(false); // This should never be hit in ArcAr!
 	}
 
 	const btTransform& getChassisWorldTransform() const;
@@ -211,4 +211,4 @@ public:
 	float getForwardSpeed();
 };
 
-RS_NS_END
+AA_NS_END

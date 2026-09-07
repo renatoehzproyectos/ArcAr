@@ -1,7 +1,7 @@
 #pragma once
 #include "../../BaseInc.h"
 
-RS_NS_START
+AA_NS_START
 
 struct PhysState {
 	// Position in world space (UU)
@@ -21,4 +21,4 @@ struct PhysState {
 	PhysState GetInvertedY() const;
 };
 
-RS_NS_END
+AA_NS_END

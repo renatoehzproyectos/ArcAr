@@ -3,7 +3,7 @@
 
 #include "SerializeObject.h"
 
-RS_NS_START
+AA_NS_START
 
 // Basic struct for reading raw data from a file
 struct DataStreamIn {
@@ -15,19 +15,19 @@ struct DataStreamIn {
 	DataStreamIn(std::filesystem::path filePath, bool versionCheck) {
 		std::ifstream fileStream = std::ifstream(filePath, std::ios::binary);
 		if (!fileStream.good())
-			RS_ERR_CLOSE("Failed to read file " << filePath << ", cannot open file.");
+			AA_ERR_CLOSE("Failed to read file " << filePath << ", cannot open file.");
 		
 		fileStream >> std::noskipws;
 		data = std::vector<byte>(std::istreambuf_iterator<char>(fileStream), std::istreambuf_iterator<char>());
 
 		if (versionCheck && !DoVersionCheck()) {
-			RS_ERR_CLOSE("Failed to read file " << filePath << ", file is invalid or from a different version of RocketSim.");
+			AA_ERR_CLOSE("Failed to read file " << filePath << ", file is invalid or from a different version of ArcAr.");
 		}
 	}
 
 	bool DoVersionCheck() {
 		uint32_t versionID = Read<uint32_t>();
-		return versionID == RS_VERSION_ID;
+		return versionID == AA_VERSION_ID;
 	}
 
 	bool IsDone() const {
@@ -51,7 +51,7 @@ struct DataStreamIn {
 			byte* asBytes = (byte*)out;
 			memcpy(asBytes, data.data() + pos, amount);
 
-			if (RS_IS_BIG_ENDIAN)
+			if (AA_IS_BIG_ENDIAN)
 				std::reverse(asBytes, asBytes + sizeof(amount));
 		}
 
@@ -73,7 +73,7 @@ struct DataStreamIn {
 	void ReadMultipleFromList(std::vector<SerializeObject> objs) {
 		uint32_t amount = Read<uint32_t>();
 		if (amount != objs.size())
-			RS_ERR_CLOSE("DataStreamIn::ReadMultipleFromList(): Prop count mismatch, expected " << objs.size() << " but have " << amount << ".");
+			AA_ERR_CLOSE("DataStreamIn::ReadMultipleFromList(): Prop count mismatch, expected " << objs.size() << " but have " << amount << ".");
 		
 		for (const SerializeObject& obj : objs)
 			ReadBytes(obj.ptr, obj.size);
@@ -85,4 +85,4 @@ struct DataStreamIn {
 	}
 };
 
-RS_NS_END
+AA_NS_END

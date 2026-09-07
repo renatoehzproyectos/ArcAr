@@ -1,7 +1,7 @@
 #pragma once
 #include "../PhysState/PhysState.h"
 #include "CarConfig/CarConfig.h"
-#include "../btVehicleRL/btVehicleRL.h"
+#include "../btVehicleGame/btVehicleGame.h"
 #include "../CarControls.h"
 #include "../BallHitInfo/BallHitInfo.h"
 #include "../MutatorConfig/MutatorConfig.h"
@@ -10,9 +10,9 @@
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Vehicle/btDefaultVehicleRaycaster.h"
 #include "../../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btBoxShape.h"
 #include "../../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btCompoundShape.h"
-#include "../../../src/Sim/btVehicleRL/btVehicleRL.h"
+#include "../../../src/Sim/btVehicleGame/btVehicleGame.h"
 
-RS_NS_START
+AA_NS_START
 
 struct CarState : public PhysState {
 
@@ -34,7 +34,7 @@ struct CarState : public PhysState {
 	bool hasJumped = false;
 
 	// True if we have double jumped and are still in the air
-	// NOTE: Flips DO NOT COUNT as double jumps! This is not RLBot.
+	// NOTE: Flips DO NOT COUNT as double jumps!
 	bool hasDoubleJumped = false;
 
 	// True if we are in the air, and (have flipped or are currently flipping)
@@ -61,7 +61,7 @@ struct CarState : public PhysState {
 	float airTimeSinceJump = 0;
 
 	// Goes from 0 to 100
-	float boost = RLConst::BOOST_SPAWN_AMOUNT;
+	float boost = GameConst::BOOST_SPAWN_AMOUNT;
 
 	// Used for recharge boost, counts up from 0 on spawn (in seconds)
 	float timeSinceBoosted = 0.f;
@@ -73,10 +73,10 @@ struct CarState : public PhysState {
 
 	bool isSupersonic = false;
 
-	// Time spent supersonic, for checking with the supersonic maintain time (see RLConst.h)
+	// Time spent supersonic, for checking with the supersonic maintain time (see GameConst.h)
 	float supersonicTime = 0;
 
-	// This is a state variable due to the rise/fall rate of handbrake inputs (see RLConst.h)
+	// This is a state variable due to the rise/fall rate of handbrake inputs (see GameConst.h)
 	float handbrakeVal = 0;
 
 	bool isAutoFlipping = false;
@@ -102,7 +102,7 @@ struct CarState : public PhysState {
 	CarControls lastControls = CarControls();
 
 	CarState() : PhysState() {
-		pos.z = RLConst::CAR_SPAWN_REST_Z;
+		pos.z = GameConst::CAR_SPAWN_REST_Z;
 	}
 
 	// Returns true if the car is currently able to jump, double-jump, or flip
@@ -132,8 +132,8 @@ enum class Team : byte {
 	ORANGE = 1
 };
 
-#define RS_OPPOSITE_TEAM(team) ((team) == Team::BLUE ? Team::ORANGE : Team::BLUE)
-#define RS_TEAM_FROM_Y(y) ((y) < 0 ? Team::BLUE : Team::ORANGE)
+#define AA_OPPOSITE_TEAM(team) ((team) == Team::BLUE ? Team::ORANGE : Team::BLUE)
+#define AA_TEAM_FROM_Y(y) ((y) < 0 ? Team::BLUE : Team::ORANGE)
 
 class Car {
 public:
@@ -151,12 +151,12 @@ public:
 	CarState GetState();
 	void SetState(const CarState& state);
 
-	void Demolish(float respawnDelay = RLConst::DEMO_RESPAWN_TIME);
+	void Demolish(float respawnDelay = GameConst::DEMO_RESPAWN_TIME);
 
 	// Respawn the car, called after we have been demolished and waited for the respawn timer
-	void Respawn(GameMode gameMode, int seed = -1, float boostAmount = RLConst::BOOST_SPAWN_AMOUNT);
+	void Respawn(GameMode gameMode, int seed = -1, float boostAmount = GameConst::BOOST_SPAWN_AMOUNT);
 
-	btVehicleRL _bulletVehicle;
+	btVehicleGame _bulletVehicle;
 	btDefaultVehicleRaycaster _bulletVehicleRaycaster;
 	btRigidBody _rigidBody;
 	btCompoundShape _compoundShape;
@@ -212,4 +212,4 @@ private:
 	Car() {}
 };
 
-RS_NS_END
+AA_NS_END

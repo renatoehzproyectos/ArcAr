@@ -1,10 +1,10 @@
 #include "BoostPad.h"
 
-#include "../../RLConst.h"
+#include "../../GameConst.h"
 
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btRigidBody.h"
 
-RS_NS_START
+AA_NS_START
 
 void BoostPadConfig::Serialize(DataStreamOut& out) const {
 	out.WriteMultiple(
@@ -40,7 +40,7 @@ void BoostPad::_Setup(const BoostPadConfig& config) {
 	this->_posBT = config.pos * UU_TO_BT;
 
 	{
-		using namespace RLConst::BoostPads;
+		using namespace GameConst::BoostPads;
 
 		float boxRad = (config.isBig ? BOX_RAD_BIG : BOX_RAD_SMALL) * UU_TO_BT;
 		this->_boxMinBT = this->_posBT - Vec(boxRad, boxRad, 0);
@@ -51,7 +51,7 @@ void BoostPad::_Setup(const BoostPadConfig& config) {
 void BoostPad::_PreTickUpdate(float tickTime) {
 
 	if (_internalState.cooldown > 0) {
-		_internalState.cooldown = RS_MAX(_internalState.cooldown - tickTime, 0);
+		_internalState.cooldown = AA_MAX(_internalState.cooldown - tickTime, 0);
 	}
 
 	_internalState.isActive = (_internalState.cooldown == 0);
@@ -60,7 +60,7 @@ void BoostPad::_PreTickUpdate(float tickTime) {
 }
 
 void BoostPad::_CheckCollide(Car* car) {
-	using namespace RLConst::BoostPads;
+	using namespace GameConst::BoostPads;
 
 	Vec carPosBT = car->_rigidBody.getWorldTransform().m_origin;
 
@@ -86,7 +86,7 @@ void BoostPad::_CheckCollide(Car* car) {
 }
 
 void BoostPad::_PostTickUpdate(float tickTime, const MutatorConfig& mutatorConfig) {
-	using namespace RLConst::BoostPads;
+	using namespace GameConst::BoostPads;
 
 	uint32_t lockedCarID = 0;
 	if (_internalState.curLockedCar) {
@@ -94,7 +94,7 @@ void BoostPad::_PostTickUpdate(float tickTime, const MutatorConfig& mutatorConfi
 
 		if (_internalState.isActive) {
 			float boostToAdd = config.isBig ? BOOST_AMOUNT_BIG : BOOST_AMOUNT_SMALL;
-			_internalState.curLockedCar->_internalState.boost = RS_MIN(_internalState.curLockedCar->_internalState.boost + boostToAdd, RLConst::BOOST_MAX);
+			_internalState.curLockedCar->_internalState.boost = AA_MIN(_internalState.curLockedCar->_internalState.boost + boostToAdd, GameConst::BOOST_MAX);
 
 			_internalState.isActive = false;
 			_internalState.cooldown = config.isBig ? mutatorConfig.boostPadCooldown_Big : mutatorConfig.boostPadCooldown_Small;
@@ -104,4 +104,4 @@ void BoostPad::_PostTickUpdate(float tickTime, const MutatorConfig& mutatorConfi
 	_internalState.prevLockedCarID = lockedCarID;
 }
 
-RS_NS_END
+AA_NS_END

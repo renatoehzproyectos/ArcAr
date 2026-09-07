@@ -3,7 +3,7 @@
 
 #include "SerializeObject.h"
 
-RS_NS_START
+AA_NS_START
 
 // Basic struct for writing raw data to a file
 struct DataStreamOut {
@@ -14,7 +14,7 @@ struct DataStreamOut {
 
 	void WriteBytes(const void* ptr, size_t amount) {
 		data.reserve(amount);
-		if (RS_IS_BIG_ENDIAN) {
+		if (AA_IS_BIG_ENDIAN) {
 			byte* reversed = (byte*)malloc(amount);
 			memcpy(reversed, ptr, amount);
 			std::reverse(reversed, reversed + amount);
@@ -46,10 +46,10 @@ struct DataStreamOut {
 	void WriteToFile(std::filesystem::path filePath, bool writeVersionCheck) {
 		std::ofstream fileStream = std::ofstream(filePath, std::ios::binary);
 		if (!fileStream.good())
-			RS_ERR_CLOSE("Failed to write to file " << filePath << ", cannot open file.");
+			AA_ERR_CLOSE("Failed to write to file " << filePath << ", cannot open file.");
 
 		if (writeVersionCheck) {
-			uint32_t version = RS_VERSION_ID;
+			uint32_t version = AA_VERSION_ID;
 			byte* versionBytes = (byte*)&version;
 			data.insert(data.begin(), versionBytes, versionBytes + sizeof(version));
 		}
@@ -69,4 +69,4 @@ inline void DataStreamOut::Write(const RotMat& val) {
 	WriteMultiple(val.forward, val.right, val.up);
 }
 
-RS_NS_END
+AA_NS_END

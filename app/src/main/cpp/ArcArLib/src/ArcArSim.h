@@ -5,15 +5,15 @@
 
 #include "Math/Math.h"
 
-// AVAILABLE DEFS FOR ROCKETSIM:
-//	RS_MAX_SPEED: Define this to remove certain sanity checks for faster speed
-//	RS_DONT_LOG: Define this to disable all logging output
-//	RS_NO_NAMESPACE: Disable the RocketSim namespace encapsulating all RocketSim classes/structs
+// AVAILABLE DEFS FOR ARCAR:
+//	AA_MAX_SPEED: Define this to remove certain sanity checks for faster speed
+//	AA_DONT_LOG: Define this to disable all logging output
+//	AA_NO_NAMESPACE: Disable the ArcAr namespace encapsulating all ArcAr classes/structs
 
 class btBvhTriangleMeshShape;
 
-namespace RocketSim {
-	enum class RocketSimStage : byte {
+namespace ArcAr {
+	enum class ArcArStage : byte {
 		UNINITIALIZED,
 		INITIALIZING,
 		INITIALIZED
@@ -33,7 +33,7 @@ namespace RocketSim {
 
 	void AssertInitialized(const char* errorMsgPrefix);
 
-	RocketSimStage GetStage();
+	ArcArStage GetStage();
 
 	std::vector<btBvhTriangleMeshShape*>& GetArenaCollisionShapes(GameMode gameMode);
 }

@@ -1,6 +1,6 @@
 #include "PhysState.h"
 
-RS_NS_START
+AA_NS_START
 
 PhysState PhysState::GetInvertedY() const {
 	constexpr Vec INVERT_SCALE = Vec(-1, -1, 1);
@@ -15,4 +15,4 @@ PhysState PhysState::GetInvertedY() const {
 	return inverted;
 }
 
-RS_NS_END
+AA_NS_END

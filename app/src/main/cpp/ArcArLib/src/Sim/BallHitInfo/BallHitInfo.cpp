@@ -1,6 +1,6 @@
 #include "BallHitInfo.h"
 
-RS_NS_START
+AA_NS_START
 
 void BallHitInfo::Serialize(DataStreamOut& out) const {
 	out.Write<bool>(isValid);
@@ -16,4 +16,4 @@ void BallHitInfo::Deserialize(DataStreamIn& in) {
 		in.ReadMultiple(BALLHITINFO_SERIALIZATION_FIELDS);
 }
 
-RS_NS_END
+AA_NS_END

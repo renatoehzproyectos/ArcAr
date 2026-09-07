@@ -1,10 +1,10 @@
 #include "Car.h"
-#include "../../RLConst.h"
+#include "../../GameConst.h"
 
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btDynamicsWorld.h"
 #include "../CollisionMasks.h"
 
-RS_NS_START
+AA_NS_START
 
 // Update our internal state from bullet and return it
 CarState Car::GetState() {
@@ -41,7 +41,7 @@ void Car::Demolish(float respawnDelay) {
 }
 
 void Car::Respawn(GameMode gameMode, int seed, float boostAmount) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	CarState newState = CarState();
 
@@ -49,14 +49,14 @@ void Car::Respawn(GameMode gameMode, int seed, float boostAmount) {
 
 	const CarSpawnPos* spawnPosArray;
 	switch (gameMode) {
-	case GameMode::HOOPS:
-		spawnPosArray = CAR_RESPAWN_LOCATIONS_HOOPS;
+	case GameMode::BASKETBALL:
+		spawnPosArray = CAR_RESPAWN_LOCATIONS_BASKETBALL;
 		break;
-	case GameMode::DROPSHOT:
-		spawnPosArray = CAR_RESPAWN_LOCATIONS_DROPSHOT;
+	case GameMode::SHATTER:
+		spawnPosArray = CAR_RESPAWN_LOCATIONS_SHATTER;
 		break;
 	default:
-		spawnPosArray = CAR_RESPAWN_LOCATIONS_SOCCAR;
+		spawnPosArray = CAR_RESPAWN_LOCATIONS_STANDARD;
 	}
 
 	CarSpawnPos spawnPos = spawnPosArray[spawnPosIndex];
@@ -69,9 +69,9 @@ void Car::Respawn(GameMode gameMode, int seed, float boostAmount) {
 }
 
 void Car::_PreTickUpdate(GameMode gameMode, float tickTime, const MutatorConfig& mutatorConfig) {
-	using namespace RLConst;
+	using namespace GameConst;
 
-#ifndef RS_MAX_SPEED
+#ifndef AA_MAX_SPEED
 	// Fix inputs
 	controls.ClampFix();
 #endif
@@ -80,7 +80,7 @@ void Car::_PreTickUpdate(GameMode gameMode, float tickTime, const MutatorConfig&
 
 	{ // Update simulation state
 		if (_internalState.isDemoed) {
-			_internalState.demoRespawnTimer = RS_MAX(_internalState.demoRespawnTimer - tickTime, 0);
+			_internalState.demoRespawnTimer = AA_MAX(_internalState.demoRespawnTimer - tickTime, 0);
 			if (_internalState.demoRespawnTimer == 0)
 				Respawn(gameMode, -1, mutatorConfig.carSpawnBoostAmount);
 
@@ -99,7 +99,7 @@ void Car::_PreTickUpdate(GameMode gameMode, float tickTime, const MutatorConfig&
 	if (_internalState.isDemoed)
 		return; // No other updates need to occur
 
-	// Do first part of the btVehicleRL update (update wheel transforms, do traces, calculate friction impulses) 
+	// Do first part of the btVehicleGame update (update wheel transforms, do traces, calculate friction impulses) 
 	_bulletVehicle.updateVehicleFirst(tickTime);
 
 	btMatrix3x3 basis = _rigidBody.getWorldTransform().m_basis;
@@ -137,7 +137,7 @@ void Car::_PreTickUpdate(GameMode gameMode, float tickTime, const MutatorConfig&
 
 	_internalState.worldContact.hasContact = false;
 
-	// Complete the btVehicleRL update (does suspension and applies wheel forces)
+	// Complete the btVehicleGame update (does suspension and applies wheel forces)
 	_bulletVehicle.updateVehicleSecond(tickTime);
 
 	_UpdateBoost(tickTime, mutatorConfig, forwardSpeed_UU);
@@ -153,12 +153,12 @@ void Car::_PostTickUpdate(GameMode gameMode, float tickTime, const MutatorConfig
 	{ // Update supersonic
 		float speedSquared = (_rigidBody.m_linearVelocity * BT_TO_UU).length2();
 
-		if (_internalState.isSupersonic && _internalState.supersonicTime < RLConst::SUPERSONIC_MAINTAIN_MAX_TIME) {
+		if (_internalState.isSupersonic && _internalState.supersonicTime < GameConst::SUPERSONIC_MAINTAIN_MAX_TIME) {
 			_internalState.isSupersonic =
-				(speedSquared >= RLConst::SUPERSONIC_MAINTAIN_MIN_SPEED * RLConst::SUPERSONIC_MAINTAIN_MIN_SPEED);
+				(speedSquared >= GameConst::SUPERSONIC_MAINTAIN_MIN_SPEED * GameConst::SUPERSONIC_MAINTAIN_MIN_SPEED);
 		} else {
 			_internalState.isSupersonic =
-				(speedSquared >= RLConst::SUPERSONIC_START_SPEED * RLConst::SUPERSONIC_START_SPEED);
+				(speedSquared >= GameConst::SUPERSONIC_START_SPEED * GameConst::SUPERSONIC_START_SPEED);
 		}
 
 		if (_internalState.isSupersonic) {
@@ -170,13 +170,13 @@ void Car::_PostTickUpdate(GameMode gameMode, float tickTime, const MutatorConfig
 
 	// Update car contact cooldown timer
 	if (_internalState.carContact.cooldownTimer > 0)
-		_internalState.carContact.cooldownTimer = RS_MAX(_internalState.carContact.cooldownTimer - tickTime, 0);
+		_internalState.carContact.cooldownTimer = AA_MAX(_internalState.carContact.cooldownTimer - tickTime, 0);
 
 	_internalState.lastControls = controls;
 }
 
 void Car::_FinishPhysicsTick(const MutatorConfig& mutatorConfig) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	if (_internalState.isDemoed)
 		return;
@@ -216,10 +216,10 @@ void Car::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const Mu
 	_compoundShape.addChildShape(hitboxOffsetTransform, &_childHitboxShape);
 
 	btVector3 localInertia(0, 0, 0);
-	_childHitboxShape.calculateLocalInertia(RLConst::CAR_MASS_BT, localInertia);
+	_childHitboxShape.calculateLocalInertia(GameConst::CAR_MASS_BT, localInertia);
 
 	btRigidBody::btRigidBodyConstructionInfo rbInfo
-		= btRigidBody::btRigidBodyConstructionInfo(RLConst::CAR_MASS_BT, NULL, &_compoundShape, localInertia);
+		= btRigidBody::btRigidBodyConstructionInfo(GameConst::CAR_MASS_BT, NULL, &_compoundShape, localInertia);
 
 	btTransform carTransform = btTransform();
 	carTransform.setIdentity();
@@ -231,14 +231,14 @@ void Car::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const Mu
 
 	_rigidBody.m_collisionFlags |= btCollisionObject::CF_CUSTOM_MATERIAL_CALLBACK;
 
-	_rigidBody.m_friction = RLConst::CAR_COLLISION_FRICTION;
-	_rigidBody.m_restitution = RLConst::CAR_COLLISION_RESTITUTION;
+	_rigidBody.m_friction = GameConst::CAR_COLLISION_FRICTION;
+	_rigidBody.m_restitution = GameConst::CAR_COLLISION_RESTITUTION;
 
 	// Disable gyroscopic force
 	_rigidBody.m_rigidbodyFlags = 0;
 	
-	// We want our car and our suspension rays to collide with the dropshot floor
-	int extraCollisionMask = CollisionMasks::DROPSHOT_FLOOR;
+	// We want our car and our suspension rays to collide with the shatter floor
+	int extraCollisionMask = CollisionMasks::SHATTER_FLOOR;
 
 	// Add rigidbody to world
 	bulletWorld->addRigidBody(
@@ -248,14 +248,14 @@ void Car::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const Mu
 	{ // Set up actual vehicle stuff
 		_bulletVehicleRaycaster = btDefaultVehicleRaycaster(bulletWorld);
 
-		btVehicleRL::btVehicleTuning tuning = btVehicleRL::btVehicleTuning();
+		btVehicleGame::btVehicleTuning tuning = btVehicleGame::btVehicleTuning();
 
-		_bulletVehicle = btVehicleRL(tuning, &_rigidBody, &_bulletVehicleRaycaster, bulletWorld, extraCollisionMask);
+		_bulletVehicle = btVehicleGame(tuning, &_rigidBody, &_bulletVehicleRaycaster, bulletWorld, extraCollisionMask);
 
-		// Match RL with X forward, Y right, Z up
+		// Match the reference coordinate convention: X forward, Y right, Z up
 		_bulletVehicle.setCoordinateSystem(1, 2, 0);
 
-		// Set up wheel directions with RL coordinate system
+		// Set up wheel directions with the reference coordinate system
 		btVector3 wheelDirectionCS(0, 0, -1), wheelAxleCS(0, -1, 0);
 
 		{ // Set up wheels
@@ -277,7 +277,7 @@ void Car::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const Mu
 				float suspensionRestLength =
 					front ? config.frontWheels.suspensionRestLength : config.backWheels.suspensionRestLength;
 
-				suspensionRestLength -= RLConst::BTVehicle::MAX_SUSPENSION_TRAVEL;
+				suspensionRestLength -= GameConst::BTVehicle::MAX_SUSPENSION_TRAVEL;
 
 				_bulletVehicle.addWheel(
 					wheelRayStartOffset * UU_TO_BT,
@@ -286,7 +286,7 @@ void Car::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const Mu
 					radius * UU_TO_BT, tuning, true);
 
 				{ // Fix wheel info data
-					using namespace RLConst::BTVehicle;
+					using namespace GameConst::BTVehicle;
 
 					btWheelInfoRL& wheelInfo = _bulletVehicle.m_wheelInfo[i];
 					wheelInfo.m_suspensionStiffness = SUSPENSION_STIFFNESS;
@@ -307,7 +307,7 @@ void Car::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const Mu
 bool CarState::HasFlipOrJump() const {
 	return 
 		isOnGround || 
-		(!hasFlipped && !hasDoubleJumped && airTimeSinceJump < RLConst::DOUBLEJUMP_MAX_DELAY);
+		(!hasFlipped && !hasDoubleJumped && airTimeSinceJump < GameConst::DOUBLEJUMP_MAX_DELAY);
 }
 
 bool CarState::HasFlipReset() const {
@@ -350,7 +350,7 @@ void Car::_Deserialize(DataStreamIn& in) {
 }
 
 void Car::_UpdateWheels(float tickTime, const MutatorConfig& mutatorConfig, int numWheelsInContact, float forwardSpeed_UU) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	float absForwardSpeed_UU = abs(forwardSpeed_UU);
 
@@ -364,7 +364,7 @@ void Car::_UpdateWheels(float tickTime, const MutatorConfig& mutatorConfig, int 
 		} else {
 			_internalState.handbrakeVal -= POWERSLIDE_FALL_RATE * tickTime;
 		}
-		_internalState.handbrakeVal = RS_CLAMP(_internalState.handbrakeVal, 0, 1);
+		_internalState.handbrakeVal = AA_CLAMP(_internalState.handbrakeVal, 0, 1);
 	}
 
 	float realThrottle = controls.throttle;
@@ -384,7 +384,7 @@ void Car::_UpdateWheels(float tickTime, const MutatorConfig& mutatorConfig, int 
 			float absThrottle = abs(realThrottle);
 
 			if (absThrottle >= THROTTLE_DEADZONE) {
-				if (absForwardSpeed_UU > STOPPING_FORWARD_VEL && RS_SGN(realThrottle) != RS_SGN(forwardSpeed_UU)) {
+				if (absForwardSpeed_UU > STOPPING_FORWARD_VEL && AA_SGN(realThrottle) != AA_SGN(forwardSpeed_UU)) {
 					// Full brake is applied if we are trying to drive in the opposite direction
 					realBrake = 1;
 
@@ -497,7 +497,7 @@ void Car::_UpdateWheels(float tickTime, const MutatorConfig& mutatorConfig, int 
 }
 
 void Car::_UpdateBoost(float tickTime, const MutatorConfig& mutatorConfig, float forwardSpeed_UU) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	bool hasBoost = _internalState.boost > 0;
 
@@ -527,7 +527,7 @@ void Car::_UpdateBoost(float tickTime, const MutatorConfig& mutatorConfig, float
 
 	// Apply boosting force and consume boost
 	if (_internalState.isBoosting) {
-		_internalState.boost = RS_MAX(_internalState.boost - mutatorConfig.boostUsedPerSecond * tickTime, 0);
+		_internalState.boost = AA_MAX(_internalState.boost - mutatorConfig.boostUsedPerSecond * tickTime, 0);
 		_rigidBody.applyCentralForce(
 			(_internalState.isOnGround ? mutatorConfig.boostAccelGround : mutatorConfig.boostAccelAir) * UU_TO_BT
 			* GetForwardDir() * CAR_MASS_BT
@@ -542,16 +542,16 @@ void Car::_UpdateBoost(float tickTime, const MutatorConfig& mutatorConfig, float
 				_internalState.boost += mutatorConfig.rechargeBoostPerSecond * tickTime;
 	}
 
-	_internalState.boost = RS_MIN(_internalState.boost, RLConst::BOOST_MAX);
+	_internalState.boost = AA_MIN(_internalState.boost, GameConst::BOOST_MAX);
 }
 
 void Car::_UpdateJump(float tickTime, const MutatorConfig& mutatorConfig, bool jumpPressed) {
-	using namespace RLConst;
+	using namespace GameConst;
 	if (_internalState.isOnGround && !_internalState.isJumping) {
 		if (_internalState.hasJumped && _internalState.jumpTime < JUMP_MIN_TIME + JUMP_RESET_TIME_PAD) {
 			// Don't reset the jump just yet, we might still be leaving the ground
 			// This fixes the bug where jump is reset before we actually leave the ground after a minimum-time jump
-			// TODO: RL does something similar to this time-pad, but not exactly the same
+			// TODO: The reference game does something similar to this time-pad, but not exactly the same
 		} else {
 			_internalState.hasJumped = false;
 			_internalState.jumpTime = 0;
@@ -581,7 +581,7 @@ void Car::_UpdateJump(float tickTime, const MutatorConfig& mutatorConfig, bool j
 		btVector3 totalJumpForce = GetUpDir() * mutatorConfig.jumpAccel;
 
 		if (_internalState.jumpTime < JUMP_MIN_TIME) {
-			// TODO: Either move to RLConst or preferably don't use this system at all
+			// TODO: Either move to GameConst or preferably don't use this system at all
 			constexpr float JUMP_PRE_MIN_ACCEL_SCALE = 0.62f;
 			totalJumpForce *= JUMP_PRE_MIN_ACCEL_SCALE;
 		}
@@ -595,7 +595,7 @@ void Car::_UpdateJump(float tickTime, const MutatorConfig& mutatorConfig, bool j
 }
 
 void Car::_UpdateAirTorque(float tickTime, const MutatorConfig& mutatorConfig, bool updateAirControl) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	btVector3
 		dirPitch_right = -GetRightDir(),
@@ -614,10 +614,10 @@ void Car::_UpdateAirTorque(float tickTime, const MutatorConfig& mutatorConfig, b
 			// Flip cancel check
 			float pitchScale = 1;
 			if (relDodgeTorque.y() != 0 && controls.pitch != 0) {
-				if (RS_SGN(relDodgeTorque.y()) == RS_SGN(controls.pitch)) {
+				if (AA_SGN(relDodgeTorque.y()) == AA_SGN(controls.pitch)) {
 
-#ifndef RS_MAX_SPEED
-					pitchScale = 1 - RS_MIN(abs(controls.pitch), 1); // Sanity clamp
+#ifndef AA_MAX_SPEED
+					pitchScale = 1 - AA_MIN(abs(controls.pitch), 1); // Sanity clamp
 #else
 					pitchScale = 1 - abs(controls.pitch); // No sanity check
 #endif
@@ -682,7 +682,7 @@ void Car::_UpdateAirTorque(float tickTime, const MutatorConfig& mutatorConfig, b
 }
 
 void Car::_UpdateDoubleJumpOrFlip(float tickTime, const MutatorConfig& mutatorConfig, bool jumpPressed, float forwardSpeed_UU) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	float tickTimeScale = tickTime / (1 / 120.f);
 
@@ -796,7 +796,7 @@ void Car::_UpdateDoubleJumpOrFlip(float tickTime, const MutatorConfig& mutatorCo
 }
 
 void Car::_UpdateAutoFlip(float tickTime, const MutatorConfig& mutatorConfig, bool jumpPressed) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	// TODO: Improve accuracy
 
@@ -832,7 +832,7 @@ void Car::_UpdateAutoFlip(float tickTime, const MutatorConfig& mutatorConfig, bo
 }
 
 void Car::_UpdateAutoRoll(float tickTime, const MutatorConfig& mutatorConfig, int numWheelsInContact) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	btVector3 groundUpDir;
 	if (numWheelsInContact > 0) {
@@ -853,8 +853,8 @@ void Car::_UpdateAutoRoll(float tickTime, const MutatorConfig& mutatorConfig, in
 		crossForwardDir = groundDownDir.cross(crossRightDir);
 
 	float
-		rightTorqueFactor = 1 - RS_CLAMP(rightDir.dot(crossRightDir), 0, 1),
-		forwardTorqueFactor = 1 - RS_CLAMP(forwardDir.dot(crossForwardDir), 0, 1);
+		rightTorqueFactor = 1 - AA_CLAMP(rightDir.dot(crossRightDir), 0, 1),
+		forwardTorqueFactor = 1 - AA_CLAMP(forwardDir.dot(crossForwardDir), 0, 1);
 
 	Vec
 		torqueDirRight = forwardDir * (rightDir.dot(groundUpDir) >= 0 ? -1 : 1),
@@ -863,8 +863,8 @@ void Car::_UpdateAutoRoll(float tickTime, const MutatorConfig& mutatorConfig, in
 	Vec torqueRight = torqueDirRight * rightTorqueFactor;
 	Vec torqueForward = torqueDirForward * forwardTorqueFactor;
 
-	_rigidBody.applyCentralForce(groundDownDir * RLConst::CAR_AUTOROLL_FORCE * UU_TO_BT * CAR_MASS_BT);
-	_rigidBody.applyTorque(_rigidBody.m_invInertiaTensorWorld.inverse() * (torqueForward + torqueRight) * RLConst::CAR_AUTOROLL_TORQUE);
+	_rigidBody.applyCentralForce(groundDownDir * GameConst::CAR_AUTOROLL_FORCE * UU_TO_BT * CAR_MASS_BT);
+	_rigidBody.applyTorque(_rigidBody.m_invInertiaTensorWorld.inverse() * (torqueForward + torqueRight) * GameConst::CAR_AUTOROLL_TORQUE);
 }
 
-RS_NS_END
+AA_NS_END

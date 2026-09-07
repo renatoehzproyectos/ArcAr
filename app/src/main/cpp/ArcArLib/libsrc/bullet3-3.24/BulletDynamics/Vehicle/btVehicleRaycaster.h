@@ -16,7 +16,7 @@
 /// btVehicleRaycaster is provides interface for between vehicle simulation and raycasting
 struct btVehicleRaycaster
 {
-	// ROCKETSIM CHANGE: Added collision masks to allow these rays to collide with special-collision objects (i.e. dropshot floor)
+	// ARCAR CHANGE: Added collision masks to allow these rays to collide with special-collision objects (i.e. dropshot floor)
 	int addedFilterMask = 0;
 
 	virtual ~btVehicleRaycaster()

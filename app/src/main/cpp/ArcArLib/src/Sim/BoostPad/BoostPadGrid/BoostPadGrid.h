@@ -1,16 +1,16 @@
 #pragma once
 #include "../../../BaseInc.h"
-#include "../../../RLConst.h"
+#include "../../../GameConst.h"
 
 #include "../BoostPad.h"
 
-RS_NS_START
+AA_NS_START
 
 struct BoostPadGrid {
 	constexpr static float
 		EXTENT_X = 4096.f,
 		EXTENT_Y = 5120.f,
-		EXTENT_Z = RLConst::BoostPads::CYL_HEIGHT + 250.f;
+		EXTENT_Z = GameConst::BoostPads::CYL_HEIGHT + 250.f;
 
 	constexpr static int
 		CELLS_X = 8,
@@ -27,4 +27,4 @@ struct BoostPadGrid {
 	void Add(BoostPad* pad);
 };
 
-RS_NS_END
+AA_NS_END

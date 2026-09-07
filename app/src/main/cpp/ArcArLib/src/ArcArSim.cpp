@@ -1,13 +1,13 @@
-#include "RocketSim.h"
+#include "ArcArSim.h"
 
 #include "../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btBvhTriangleMeshShape.h"
 #include "../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btTriangleMesh.h"
 #include "../libsrc/bullet3-3.24/BulletCollision/CollisionDispatch/btInternalEdgeUtility.h"
 
-using namespace RocketSim;
+using namespace ArcAr;
 
-std::filesystem::path RocketSim::_collisionMeshesFolder = {};
-std::mutex RocketSim::_beginInitMutex = {};
+std::filesystem::path ArcAr::_collisionMeshesFolder = {};
+std::mutex ArcAr::_beginInitMutex = {};
 
 struct MeshHashSet {
 	std::unordered_map<uint32_t, int> hashes;
@@ -17,7 +17,7 @@ struct MeshHashSet {
 	}
 
 	MeshHashSet(GameMode gameMode) {
-		if (gameMode == GameMode::SOCCAR) {
+		if (gameMode == GameMode::STANDARD) {
 			AddAll(
 				{
 					0xA160BAF9, 0x2811EEE8, 0xB81AC8B9, 0x760358D3,
@@ -26,7 +26,7 @@ struct MeshHashSet {
 					0xBD4FBEA8, 0x39A47F63, 0x3D79D25D, 0xD84C7A68
 				}
 			);
-		} else if (gameMode == GameMode::HOOPS) {
+		} else if (gameMode == GameMode::BASKETBALL) {
 			AddAll(
 				{
 					0x72F2359E, 0x5ED14A26, 0XFD5A0D07, 0x92AFA5B5,
@@ -42,46 +42,46 @@ struct MeshHashSet {
 	}
 };
 
-static RocketSimStage stage = RocketSimStage::UNINITIALIZED;
-RocketSimStage RocketSim::GetStage() {
+static ArcArStage stage = ArcArStage::UNINITIALIZED;
+ArcArStage ArcAr::GetStage() {
 	return stage;
 }
 
-std::vector<btBvhTriangleMeshShape*>& RocketSim::GetArenaCollisionShapes(GameMode gameMode) {
+std::vector<btBvhTriangleMeshShape*>& ArcAr::GetArenaCollisionShapes(GameMode gameMode) {
 	static std::map<GameMode, std::vector<btBvhTriangleMeshShape*>> arenaCollisionMeshes;
 
 	switch (gameMode) {
-	case GameMode::SNOWDAY:
-	case GameMode::HEATSEEKER:
-		gameMode = GameMode::SOCCAR;
+	case GameMode::HOCKEY:
+	case GameMode::HOMING:
+		gameMode = GameMode::STANDARD;
 	}
 
 	return arenaCollisionMeshes[gameMode];
 }
 
-void RocketSim::Init(std::filesystem::path collisionMeshesFolder, bool silent) {
+void ArcAr::Init(std::filesystem::path collisionMeshesFolder, bool silent) {
 
 	std::map<GameMode, std::vector<FileData>> meshFileMap = {};
 
 	constexpr GameMode GAMEMODES_WITH_UNIQUE_MESHES[] = {
-		GameMode::SOCCAR,
-		GameMode::HOOPS,
-		GameMode::DROPSHOT,
+		GameMode::STANDARD,
+		GameMode::BASKETBALL,
+		GameMode::SHATTER,
 	};
 
-	for (GameMode gameMode : GAMEMODES_WITH_UNIQUE_MESHES) { // Load collision meshes for soccar and hoops
+	for (GameMode gameMode : GAMEMODES_WITH_UNIQUE_MESHES) { // Load collision meshes for standard and basketball
 		auto& meshes = GetArenaCollisionShapes(gameMode);
 
 		std::filesystem::path basePath = collisionMeshesFolder;
-		std::filesystem::path soccarMeshesFolder = basePath / GAMEMODE_STRS[(int)gameMode];
+		std::filesystem::path standardMeshesFolder = basePath / GAMEMODE_STRS[(int)gameMode];
 
-		if (!std::filesystem::exists(soccarMeshesFolder))
+		if (!std::filesystem::exists(standardMeshesFolder))
 			continue;
 
 		MeshHashSet targetHashes = MeshHashSet(gameMode);
 
 		// Load collision meshes
-		auto dirItr = std::filesystem::directory_iterator(soccarMeshesFolder);
+		auto dirItr = std::filesystem::directory_iterator(standardMeshesFolder);
 		for (auto& entry : dirItr) {
 			auto entryPath = entry.path();
 			if (entryPath.has_extension() && entryPath.extension() == COLLISION_MESH_FILE_EXTENSION) {
@@ -91,46 +91,46 @@ void RocketSim::Init(std::filesystem::path collisionMeshesFolder, bool silent) {
 		}
 	}
 
-	RocketSim::InitFromMem(meshFileMap, silent);
+	ArcAr::InitFromMem(meshFileMap, silent);
 
 	_collisionMeshesFolder = collisionMeshesFolder;
 }
 
-void RocketSim::InitFromMem(const std::map<GameMode, std::vector<FileData>>& meshFilesMap, bool silent) {
+void ArcAr::InitFromMem(const std::map<GameMode, std::vector<FileData>>& meshFilesMap, bool silent) {
 
-	constexpr char MSG_PREFIX[] = "RocketSim::Init(): ";
+	constexpr char MSG_PREFIX[] = "ArcAr::Init(): ";
 
 	_collisionMeshesFolder = "<MESH FILES LOADED FROM MEMORY>";
 
 	_beginInitMutex.lock();
 	{
-		if (stage != RocketSimStage::UNINITIALIZED) {
+		if (stage != ArcArStage::UNINITIALIZED) {
 			if (!silent)
-				RS_WARN("RocketSim::Init() called again after already initialized, ignoring...");
+				AA_WARN("ArcAr::Init() called again after already initialized, ignoring...");
 			_beginInitMutex.unlock();
 			return;
 		}
 
 		if (!silent)
-			RS_LOG("Initializing RocketSim version " RS_VERSION ", created by ZealanL...");
+			AA_LOG("Initializing ArcAr version " AA_VERSION ", created for ArcAr.");
 
-		stage = RocketSimStage::INITIALIZING;
+		stage = ArcArStage::INITIALIZING;
 
-		uint64_t startMS = RS_CUR_MS();
+		uint64_t startMS = AA_CUR_MS();
 
-		// Init dropshot stuff
-		DropshotTiles::Init();
+		// Init shatter stuff
+		ShatterTiles::Init();
 
-		for (auto& mapPair : meshFilesMap) { // Load collision meshes for soccar and hoops
+		for (auto& mapPair : meshFilesMap) { // Load collision meshes for standard and basketball
 			GameMode gameMode = mapPair.first;
 			auto& meshFiles = mapPair.second;
 
 			if (!silent)
-				RS_LOG("Loading arena meshes for " << GAMEMODE_STRS[(int)gameMode] << "...");
+				AA_LOG("Loading arena meshes for " << GAMEMODE_STRS[(int)gameMode] << "...");
 
 			if (meshFiles.empty()) {
 				if (!silent)
-					RS_LOG(" > No meshes, skipping");
+					AA_LOG(" > No meshes, skipping");
 				continue;
 			}
 
@@ -149,12 +149,12 @@ void RocketSim::InitFromMem(const std::map<GameMode, std::vector<FileData>>& mes
 
 				if (hashCount > 0) {
 					if (!silent)
-						RS_WARN(MSG_PREFIX << "Collision mesh [" << idx << "] is a duplicate (0x" << std::hex << meshFile.hash << "), " <<
+						AA_WARN(MSG_PREFIX << "Collision mesh [" << idx << "] is a duplicate (0x" << std::hex << meshFile.hash << "), " <<
 							"already loaded a mesh with the same hash."
 						);
 				} else if (targetHashes.hashes.count(meshFile.hash) == 0) {
 					if (!silent)
-						RS_WARN(MSG_PREFIX <<
+						AA_WARN(MSG_PREFIX <<
 							"Collision mesh [" << idx << "] does not match any known " << GAMEMODE_STRS[(int)gameMode] << " collision mesh (0x" << std::hex << meshFile.hash << "), " <<
 							"make sure they were dumped from a normal " << GAMEMODE_STRS[(int)gameMode] << " arena."
 						);
@@ -174,25 +174,25 @@ void RocketSim::InitFromMem(const std::map<GameMode, std::vector<FileData>>& mes
 		}
 
 		if (!silent) {
-			RS_LOG(MSG_PREFIX << "Finished loading arena collision meshes:");
-			RS_LOG(" > Soccar: " << GetArenaCollisionShapes(GameMode::SOCCAR).size());
-			RS_LOG(" > Hoops: " << GetArenaCollisionShapes(GameMode::HOOPS).size());
-			RS_LOG(" > Dropshot: " << GetArenaCollisionShapes(GameMode::DROPSHOT).size());
+			AA_LOG(MSG_PREFIX << "Finished loading arena collision meshes:");
+			AA_LOG(" > Standard: " << GetArenaCollisionShapes(GameMode::STANDARD).size());
+			AA_LOG(" > Basketball: " << GetArenaCollisionShapes(GameMode::BASKETBALL).size());
+			AA_LOG(" > Shatter: " << GetArenaCollisionShapes(GameMode::SHATTER).size());
 		}
 
 
-		uint64_t elapsedMS = RS_CUR_MS() - startMS;
+		uint64_t elapsedMS = AA_CUR_MS() - startMS;
 
 		if (!silent)
-			RS_LOG("Finished initializing RocketSim in " << (elapsedMS / 1000.f) << "s!");
+			AA_LOG("Finished initializing ArcAr in " << (elapsedMS / 1000.f) << "s!");
 
-		stage = RocketSimStage::INITIALIZED;
+		stage = ArcArStage::INITIALIZED;
 	}
 	_beginInitMutex.unlock();
 }
 
-void RocketSim::AssertInitialized(const char* errorMsgPrefix) {
-	if (stage != RocketSimStage::INITIALIZED) {
-		RS_ERR_CLOSE(errorMsgPrefix << "RocketSim has not been initialized, call RocketSim::Init() first")
+void ArcAr::AssertInitialized(const char* errorMsgPrefix) {
+	if (stage != ArcArStage::INITIALIZED) {
+		AA_ERR_CLOSE(errorMsgPrefix << "ArcAr has not been initialized, call ArcAr::Init() first")
 	}
 }

@@ -950,7 +950,7 @@ void btSequentialImpulseConstraintSolver::setupContactConstraint(btSolverConstra
 		{
 			positionalError = 0;
 
-			// ROCKETSIM CHANGE: Commented out this line because it ruins ball bounces at low velocities
+			// ARCAR CHANGE: Commented out this line because it ruins ball bounces at low velocities
 			//velocityError -= penetration * invTimeStep;
 		}
 		else
@@ -978,7 +978,7 @@ void btSequentialImpulseConstraintSolver::setupContactConstraint(btSolverConstra
 		solverConstraint.m_upperLimit = 1e10f;
 	}
 
-	// ROCKETSIM CHANGE: Copy over m_isSpecial from contact point
+	// ARCAR CHANGE: Copy over m_isSpecial from contact point
 	solverConstraint.m_isSpecial = cp.m_isSpecial;
 }
 
@@ -1045,7 +1045,7 @@ void btSequentialImpulseConstraintSolver::convertContact(btPersistentManifold* m
 			
 			solverConstraint.m_frictionIndex = m_tmpSolverContactFrictionConstraintPool.size();
 
-			// ROCKETSIM CHANGE: Set btSpecialResolveInfo of bodies
+			// ARCAR CHANGE: Set btSpecialResolveInfo of bodies
 			if (cp.m_isSpecial) {
 				for (int i = 0; i < 2; i++) {
 					btCollisionObject* colObj = i ? colObj1 : colObj0;
@@ -1060,7 +1060,7 @@ void btSequentialImpulseConstraintSolver::convertContact(btPersistentManifold* m
 				}
 			}
 
-			// ROCKETSIM CHANGE: Rest of this function moved to convertContactInner
+			// ARCAR CHANGE: Rest of this function moved to convertContactInner
 			convertContactInner(infoGlobal, cp, solverConstraint, 
 				colObj0, colObj1, solverBodyA, solverBodyB, solverBodyIdA, solverBodyIdB, 
 				rel_pos1, rel_pos2, frictionIndex, relaxation, rollingFriction);
@@ -1549,12 +1549,12 @@ btScalar btSequentialImpulseConstraintSolver::solveGroupCacheFriendlySetup(btCol
 	//convert all bodies
 	convertBodies(bodies, numBodies, infoGlobal);
 
-	// ROCKETSIM CHANGE: We do not need this
+	// ARCAR CHANGE: We do not need this
 	//convertJoints(constraints, numConstraints, infoGlobal);
 
 	convertContacts(manifoldPtr, numManifolds, infoGlobal);
 
-	// ROCKETSIM CHANGE: Handle special collisions
+	// ARCAR CHANGE: Handle special collisions
 	for (int i = 0; i < numBodies; i++) {
 		btCollisionObject* body = bodies[i];
 		if (body && body->m_specialResolveInfo.m_numSpecialCollisions > 0) {
@@ -1678,7 +1678,7 @@ btScalar btSequentialImpulseConstraintSolver::solveSingleIteration(int iteration
 
 				{
 					const btSolverConstraint& solveManifold = m_tmpSolverContactConstraintPool[m_orderTmpConstraintPool[c]];
-					if (!solveManifold.m_isSpecial) // ROCKETSIM CHANGE: Only resolve non-special manifolds
+					if (!solveManifold.m_isSpecial) // ARCAR CHANGE: Only resolve non-special manifolds
 						continue;
 
 					btScalar residual = resolveSingleConstraintRowLowerLimit(m_tmpSolverBodyPool[solveManifold.m_solverBodyIdA], m_tmpSolverBodyPool[solveManifold.m_solverBodyIdB], solveManifold);
@@ -1727,7 +1727,7 @@ btScalar btSequentialImpulseConstraintSolver::solveSingleIteration(int iteration
 			for (j = 0; j < numPoolConstraints; j++)
 			{
 				const btSolverConstraint& solveManifold = m_tmpSolverContactConstraintPool[m_orderTmpConstraintPool[j]];
-				if (solveManifold.m_isSpecial) // ROCKETSIM CHANGE: Only resolve non-special manifolds
+				if (solveManifold.m_isSpecial) // ARCAR CHANGE: Only resolve non-special manifolds
 					continue;
 
 				btScalar residual = resolveSingleConstraintRowLowerLimit(m_tmpSolverBodyPool[solveManifold.m_solverBodyIdA], m_tmpSolverBodyPool[solveManifold.m_solverBodyIdB], solveManifold);
@@ -1835,7 +1835,7 @@ void btSequentialImpulseConstraintSolver::writeBackContacts(int iBegin, int iEnd
 		const btSolverConstraint& solveManifold = m_tmpSolverContactConstraintPool[j];
 		btManifoldPoint* pt = (btManifoldPoint*)solveManifold.m_originalContactPoint;
 	
-		// ROCKETSIM CHANGE: Skip null contact points
+		// ARCAR CHANGE: Skip null contact points
 		if (!pt)
 			continue;
 

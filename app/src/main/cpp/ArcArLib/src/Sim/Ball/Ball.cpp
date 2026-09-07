@@ -1,13 +1,13 @@
 #include "Ball.h"
 
-#include "../../RLConst.h"
+#include "../../GameConst.h"
 #include "../Car/Car.h"
 
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btDynamicsWorld.h"
 #include "../../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btConvexHullShape.h"
 #include "../CollisionMasks.h"
 
-RS_NS_START
+AA_NS_START
 
 bool BallState::Matches(const BallState& other, float marginPos, float marginVel, float marginAngVel) const {
 	return
@@ -52,18 +52,18 @@ void Ball::SetState(const BallState& state) {
 
 btCollisionShape* MakeBallCollisionShape(GameMode gameMode, const MutatorConfig& mutatorConfig, btVector3& localIntertia) {
 	
-	if (gameMode == GameMode::SNOWDAY) {
-		using namespace RLConst;
+	if (gameMode == GameMode::HOCKEY) {
+		using namespace GameConst;
 
 		auto shape = new btConvexHullShape();
 		
-		float angStep = (M_PI * 2) / Snowday::PUCK_CIRCLE_POINT_AMOUNT;
+		float angStep = (M_PI * 2) / Hockey::PUCK_CIRCLE_POINT_AMOUNT;
 		float curAng = 0;
-		for (int i = 0; i < Snowday::PUCK_CIRCLE_POINT_AMOUNT; i++) {
+		for (int i = 0; i < Hockey::PUCK_CIRCLE_POINT_AMOUNT; i++) {
 			Vec point = Vec(
 				cosf(curAng) * mutatorConfig.ballRadius * UU_TO_BT,
 				sinf(curAng) * mutatorConfig.ballRadius * UU_TO_BT,
-				Snowday::PUCK_HEIGHT / 2 * UU_TO_BT
+				Hockey::PUCK_HEIGHT / 2 * UU_TO_BT
 			);
 
 			shape->addPoint(point, false);
@@ -110,12 +110,12 @@ void Ball::_BulletSetup(GameMode gameMode, btDynamicsWorld* bulletWorld, const M
 
 	bulletWorld->addRigidBody(
 		&_rigidBody,
-		btBroadphaseProxy::DefaultFilter | CollisionMasks::HOOPS_NET | CollisionMasks::DROPSHOT_TILE, btBroadphaseProxy::AllFilter
+		btBroadphaseProxy::DefaultFilter | CollisionMasks::BASKETBALL_NET | CollisionMasks::SHATTER_TILE, btBroadphaseProxy::AllFilter
 	);
 }
 
 void Ball::_FinishPhysicsTick(const MutatorConfig& mutatorConfig) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	// Add velocity cache
 	if (!_velocityImpulseCache.IsZero()) {
@@ -159,8 +159,8 @@ float Ball::GetMass() const {
 }
 
 void Ball::_PreTickUpdate(GameMode gameMode, float tickTime) {
-	if (gameMode == GameMode::HEATSEEKER) {
-		using namespace RLConst;
+	if (gameMode == GameMode::HOMING) {
+		using namespace GameConst;
 
 		auto state = GetState();
 
@@ -169,7 +169,7 @@ void Ball::_PreTickUpdate(GameMode gameMode, float tickTime) {
 			Angle velAngle = Angle::FromVec(state.vel);
 
 			// Determine angle to goal
-			Vec goalTargetPos = Vec(0, Heatseeker::TARGET_Y * yTargetDir, Heatseeker::TARGET_Z);
+			Vec goalTargetPos = Vec(0, Homing::TARGET_Y * yTargetDir, Homing::TARGET_Z);
 			Angle angleToGoal = Angle::FromVec(goalTargetPos - state.pos);
 
 			// Find difference between target angle and current angle
@@ -177,24 +177,24 @@ void Ball::_PreTickUpdate(GameMode gameMode, float tickTime) {
 			
 			// Determine speed ratio
 			float curSpeed = state.vel.Length();
-			float speedRatio = curSpeed / Heatseeker::MAX_SPEED;
+			float speedRatio = curSpeed / Homing::MAX_SPEED;
 
 			// Interpolate delta
 			Angle newAngle = velAngle;
 			float baseInterpFactor = speedRatio * tickTime;
-			newAngle.yaw += deltaAngle.yaw * baseInterpFactor * Heatseeker::HORIZONTAL_BLEND;
-			newAngle.pitch += deltaAngle.pitch * baseInterpFactor * Heatseeker::VERTICAL_BLEND;
+			newAngle.yaw += deltaAngle.yaw * baseInterpFactor * Homing::HORIZONTAL_BLEND;
+			newAngle.pitch += deltaAngle.pitch * baseInterpFactor * Homing::VERTICAL_BLEND;
 			newAngle.NormalizeFix();
 
 			// Limit pitch
-			newAngle.pitch = RS_CLAMP(newAngle.pitch, -Heatseeker::MAX_TURN_PITCH, Heatseeker::MAX_TURN_PITCH);
+			newAngle.pitch = AA_CLAMP(newAngle.pitch, -Homing::MAX_TURN_PITCH, Homing::MAX_TURN_PITCH);
 
 			// Apply aggressive UE3 rotator rounding
 			// (This is suprisingly important for accuracy)
 			newAngle = Math::RoundAngleUE3(newAngle);
 			
 			// Determine new interpolated speed
-			float newSpeed = curSpeed + ((state.hsInfo.curTargetSpeed - curSpeed) * Heatseeker::SPEED_BLEND);
+			float newSpeed = curSpeed + ((state.hsInfo.curTargetSpeed - curSpeed) * Homing::SPEED_BLEND);
 
 			// Update velocity
 			Vec newDir = newAngle.GetForwardVec();
@@ -204,14 +204,14 @@ void Ball::_PreTickUpdate(GameMode gameMode, float tickTime) {
 
 			_internalState.hsInfo.timeSinceHit += tickTime;
 		}
-	} else if (gameMode == GameMode::SNOWDAY) {
+	} else if (gameMode == GameMode::HOCKEY) {
 		_groundStickApplied = false;
-	} else if (gameMode == GameMode::DROPSHOT || gameMode == GameMode::HOOPS) {
+	} else if (gameMode == GameMode::SHATTER || gameMode == GameMode::BASKETBALL) {
 		// Launch ball after a short delay on kickoff
 
-		bool isDropshot = (gameMode == GameMode::DROPSHOT);
+		bool isShatter = (gameMode == GameMode::SHATTER);
 
-		float launchDelay = isDropshot ? RLConst::Dropshot::BALL_LAUNCH_DELAY : RLConst::BALL_HOOPS_LAUNCH_DELAY;
+		float launchDelay = isShatter ? GameConst::Shatter::BALL_LAUNCH_DELAY : GameConst::BALL_BASKETBALL_LAUNCH_DELAY;
 
 		float curKickoffTime = _internalState.tickCountSinceUpdate * tickTime;
 		float prevKickoffTime = curKickoffTime - tickTime;
@@ -225,7 +225,7 @@ void Ball::_PreTickUpdate(GameMode gameMode, float tickTime) {
 			if (state.vel.IsZero() && state.angVel.IsZero() && state.pos.To2D().IsZero()) {
 
 				// Apply the force
-				float launchVelZ = isDropshot ? RLConst::Dropshot::BALL_LAUNCH_Z_VEL : RLConst::BALL_HOOPS_LAUNCH_Z_VEL;
+				float launchVelZ = isShatter ? GameConst::Shatter::BALL_LAUNCH_Z_VEL : GameConst::BALL_BASKETBALL_LAUNCH_Z_VEL;
 				_rigidBody.applyCentralImpulse(Vec(0, 0, launchVelZ) * GetMass() * UU_TO_BT);
 				_rigidBody.setActivationState(ACTIVE_TAG);
 			}
@@ -239,7 +239,7 @@ void Ball::_OnHit(
 	float& outFriction, float& outRestitution,
 	GameMode gameMode, const MutatorConfig& mutatorConfig, uint64_t tickCount
 ) {
-	using namespace RLConst;
+	using namespace GameConst;
 
 	auto carState = car->GetState();
 	auto ballState = GetState();
@@ -266,14 +266,14 @@ void Ball::_OnHit(
 		Vec relPos = ballState.pos - carState.pos;
 		Vec relVel = ballState.vel - carState.vel;
 
-		float relSpeed = RS_MIN(relVel.Length(), BALL_CAR_EXTRA_IMPULSE_MAXDELTAVEL_UU);
+		float relSpeed = AA_MIN(relVel.Length(), BALL_CAR_EXTRA_IMPULSE_MAXDELTAVEL_UU);
 
 		if (relSpeed > 0) {
 			bool extraZScale =
-				gameMode == GameMode::HOOPS &&
+				gameMode == GameMode::BASKETBALL &&
 				carState.isOnGround &&
-				carState.rotMat.up.z > BALL_CAR_EXTRA_IMPULSE_Z_SCALE_HOOPS_NORMAL_Z_THRESH;
-			float zScale = extraZScale ? BALL_CAR_EXTRA_IMPULSE_Z_SCALE_HOOPS_GROUND : BALL_CAR_EXTRA_IMPULSE_Z_SCALE;
+				carState.rotMat.up.z > BALL_CAR_EXTRA_IMPULSE_Z_SCALE_BASKETBALL_NORMAL_Z_THRESH;
+			float zScale = extraZScale ? BALL_CAR_EXTRA_IMPULSE_Z_SCALE_BASKETBALL_GROUND : BALL_CAR_EXTRA_IMPULSE_Z_SCALE;
 			Vec hitDir = (relPos * Vec(1, 1, zScale)).Normalized();
 			Vec forwardDirAdjustment = carForward * hitDir.Dot(carForward) * (1 - BALL_CAR_EXTRA_IMPULSE_FORWARD_SCALE);
 			hitDir = (hitDir - forwardDirAdjustment).Normalized();
@@ -288,31 +288,31 @@ void Ball::_OnHit(
 		return;
 	}
 
-	if (gameMode == GameMode::HEATSEEKER) {
-		bool canIncrease = (_internalState.hsInfo.timeSinceHit > Heatseeker::MIN_SPEEDUP_INTERVAL) || (_internalState.hsInfo.yTargetDir == 0);
+	if (gameMode == GameMode::HOMING) {
+		bool canIncrease = (_internalState.hsInfo.timeSinceHit > Homing::MIN_SPEEDUP_INTERVAL) || (_internalState.hsInfo.yTargetDir == 0);
 		float newTargetDir = (car->team == Team::BLUE) ? 1 : -1;
 		if (canIncrease && (newTargetDir != _internalState.hsInfo.yTargetDir)) {
 			_internalState.hsInfo.timeSinceHit = 0;
-			_internalState.hsInfo.curTargetSpeed = RS_MIN(_internalState.hsInfo.curTargetSpeed + Heatseeker::TARGET_SPEED_INCREMENT, Heatseeker::MAX_SPEED);
+			_internalState.hsInfo.curTargetSpeed = AA_MIN(_internalState.hsInfo.curTargetSpeed + Homing::TARGET_SPEED_INCREMENT, Homing::MAX_SPEED);
 		}
 		_internalState.hsInfo.yTargetDir = newTargetDir;
-	} else if (gameMode == GameMode::DROPSHOT) {
+	} else if (gameMode == GameMode::SHATTER) {
 		auto& accumulatedHitForce = _internalState.dsInfo.accumulatedHitForce;
 		auto& chargeLevel = _internalState.dsInfo.chargeLevel;
 
 		Vec dirFromCar = (ballState.pos - carState.pos).Normalized();
 		Vec relVelFromCar = carState.vel - ballState.vel;
 		float velIntoBall = dirFromCar.Dot(relVelFromCar);
-		if (velIntoBall >= Dropshot::MIN_CHARGE_HIT_SPEED) {
+		if (velIntoBall >= Shatter::MIN_CHARGE_HIT_SPEED) {
 			
 			accumulatedHitForce += velIntoBall;
 
 			// Normal charge
-			if (accumulatedHitForce >= Dropshot::MIN_ABSORBED_FORCE_FOR_CHARGE)
+			if (accumulatedHitForce >= Shatter::MIN_ABSORBED_FORCE_FOR_CHARGE)
 				chargeLevel = 2;
 			
 			// Supercharge
-			if (accumulatedHitForce >= Dropshot::MIN_ABSORBED_FORCE_FOR_SUPERCHARGE)
+			if (accumulatedHitForce >= Shatter::MIN_ABSORBED_FORCE_FOR_SUPERCHARGE)
 				chargeLevel = 3;
 		}
 		
@@ -324,15 +324,15 @@ void Ball::_OnHit(
 }
 
 void Ball::_OnWorldCollision(GameMode gameMode, Vec normal, float tickTime) {
-	using namespace RLConst;
+	using namespace GameConst;
 
-	if (gameMode == GameMode::HEATSEEKER) {
+	if (gameMode == GameMode::HOMING) {
 		if (_internalState.hsInfo.yTargetDir != 0 ) {
 			Vec pos = _rigidBody.getWorldTransform().getOrigin() * BT_TO_UU;
 			float relNormalY = normal.y * _internalState.hsInfo.yTargetDir;
 			float relY = pos.y * _internalState.hsInfo.yTargetDir;
-			if (relNormalY <= -Heatseeker::WALL_BOUNCE_CHANGE_Y_NORMAL && 
-				relY >= ARENA_EXTENT_Y - Heatseeker::WALL_BOUNCE_CHANGE_Y_THRESH) {
+			if (relNormalY <= -Homing::WALL_BOUNCE_CHANGE_Y_NORMAL && 
+				relY >= ARENA_EXTENT_Y - Homing::WALL_BOUNCE_CHANGE_Y_THRESH) {
 
 				// We hit far enough to change direction
 				_internalState.hsInfo.yTargetDir *= -1;
@@ -341,62 +341,62 @@ void Ball::_OnWorldCollision(GameMode gameMode, Vec normal, float tickTime) {
 				Vec vel = _rigidBody.m_linearVelocity * BT_TO_UU;
 
 				// TODO: Make this a member function
-				Vec goalTargetPos = Vec(0, Heatseeker::TARGET_Y * _internalState.hsInfo.yTargetDir, Heatseeker::TARGET_Z);
+				Vec goalTargetPos = Vec(0, Homing::TARGET_Y * _internalState.hsInfo.yTargetDir, Homing::TARGET_Z);
 
 				// Add wall bounce impulse
 				Vec dirToGoal = (goalTargetPos - pos).Normalized();
 
 				Vec bounceDir =
-					dirToGoal * (1 - Heatseeker::WALL_BOUNCE_UP_FRAC) +
-					Vec(0, 0, 1) * Heatseeker::WALL_BOUNCE_UP_FRAC;
-				Vec bounceImpulse = bounceDir * vel.Length() * Heatseeker::WALL_BOUNCE_FORCE_SCALE;
+					dirToGoal * (1 - Homing::WALL_BOUNCE_UP_FRAC) +
+					Vec(0, 0, 1) * Homing::WALL_BOUNCE_UP_FRAC;
+				Vec bounceImpulse = bounceDir * vel.Length() * Homing::WALL_BOUNCE_FORCE_SCALE;
 				_velocityImpulseCache += bounceImpulse * UU_TO_BT;
 			}
 		}
-	} else if (gameMode == GameMode::SNOWDAY) {
+	} else if (gameMode == GameMode::HOCKEY) {
 		if (!_groundStickApplied) {
-			_rigidBody.applyCentralForce(-normal * Snowday::PUCK_GROUND_STICK_FORCE);
+			_rigidBody.applyCentralForce(-normal * Hockey::PUCK_GROUND_STICK_FORCE);
 			_groundStickApplied = true;
 		}
 	}
 }
 
-bool Ball::_OnDropshotTileCollision(
-	DropshotTilesState& tilesState, int tileTotalIndex, const btCollisionObject* tileObj,
+bool Ball::_OnShatterTileCollision(
+	ShatterTilesState& tilesState, int tileTotalIndex, const btCollisionObject* tileObj,
 	uint64_t tickCount, float tickTime
 ) {
-	int teamIdx = tileTotalIndex / RLConst::Dropshot::NUM_TILES_PER_TEAM;
-	int tileIdx = tileTotalIndex % RLConst::Dropshot::NUM_TILES_PER_TEAM;
+	int teamIdx = tileTotalIndex / GameConst::Shatter::NUM_TILES_PER_TEAM;
+	int tileIdx = tileTotalIndex % GameConst::Shatter::NUM_TILES_PER_TEAM;
 	auto& tileState = tilesState.states[teamIdx][tileIdx];
-	Vec tilePos = DropshotTiles::GetTilePos(teamIdx, tileIdx);
+	Vec tilePos = ShatterTiles::GetTilePos(teamIdx, tileIdx);
 	auto& dsInfo = _internalState.dsInfo;
 
 	// This should be possible in rare circumstances where two tiles are hit simultaneously
-	if (tileState.damageState == DropshotTileState::STATE_BROKEN)
+	if (tileState.damageState == ShatterTileState::STATE_BROKEN)
 		return false;
 
 	if (dsInfo.hasDamaged) {
 		float timeSinceDamage = (tickCount - dsInfo.lastDamageTick) * tickTime;
-		if (timeSinceDamage <= RLConst::Dropshot::MIN_DAMAGE_INTERVAL)
+		if (timeSinceDamage <= GameConst::Shatter::MIN_DAMAGE_INTERVAL)
 			return false; // Hasn't been long enough since we last damaged
 	}
 
 	Vec vel = _rigidBody.getLinearVelocity() * BT_TO_UU;
-	if (vel.z > -RLConst::Dropshot::MIN_DOWNWARD_SPEED_TO_DAMAGE)
+	if (vel.z > -GameConst::Shatter::MIN_DOWNWARD_SPEED_TO_DAMAGE)
 		return false;
 
 	if (dsInfo.chargeLevel > 1 && dsInfo.yTargetDir != 0)
-		if (RS_SGN(tilePos.y) != dsInfo.yTargetDir)
+		if (AA_SGN(tilePos.y) != dsInfo.yTargetDir)
 			return false; // Wrong side of the arena
 
 	// All checks passed
 
 	// Break the tile(s)
 	{
-		std::vector<int> indicesToBreak = DropshotTiles::GetNeighborIndices(tileIdx, dsInfo.chargeLevel);
+		std::vector<int> indicesToBreak = ShatterTiles::GetNeighborIndices(tileIdx, dsInfo.chargeLevel);
 		for (int i : indicesToBreak) {
-			DropshotTileState& state = tilesState.states[teamIdx][i];
-			if (state.damageState != DropshotTileState::STATE_BROKEN)
+			ShatterTileState& state = tilesState.states[teamIdx][i];
+			if (state.damageState != ShatterTileState::STATE_BROKEN)
 				state.damageState++;
 		}
 	}
@@ -408,4 +408,4 @@ bool Ball::_OnDropshotTileCollision(
 	return true;
 }
 
-RS_NS_END
+AA_NS_END

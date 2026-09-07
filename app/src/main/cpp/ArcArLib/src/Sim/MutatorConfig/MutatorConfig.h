@@ -1,11 +1,11 @@
 #pragma once
-#include "../../RLConst.h"
+#include "../../GameConst.h"
 #include "../GameMode.h"
 
 #include "../../DataStream/DataStreamIn.h"
 #include "../../DataStream/DataStreamOut.h"
 
-RS_NS_START
+AA_NS_START
 
 enum class DemoMode : byte {
 	NORMAL,
@@ -15,20 +15,20 @@ enum class DemoMode : byte {
 
 struct MutatorConfig {
 
-	Vec gravity = Vec(0, 0, RLConst::GRAVITY_Z);
+	Vec gravity = Vec(0, 0, GameConst::GRAVITY_Z);
 
 	float
-		carMass = RLConst::CAR_MASS_BT,
+		carMass = GameConst::CAR_MASS_BT,
 
 		// Friction between car and world (arena)
-		carWorldFriction = RLConst::CARWORLD_COLLISION_FRICTION,
+		carWorldFriction = GameConst::CARWORLD_COLLISION_FRICTION,
 
 
-		carWorldRestitution = RLConst::CARWORLD_COLLISION_RESTITUTION,
+		carWorldRestitution = GameConst::CARWORLD_COLLISION_RESTITUTION,
 
 		ballMass,
-		ballMaxSpeed = RLConst::BALL_MAX_SPEED,
-		ballDrag = RLConst::BALL_DRAG,
+		ballMaxSpeed = GameConst::BALL_MAX_SPEED,
+		ballDrag = GameConst::BALL_DRAG,
 
 		// Friction between car and world (arena)
 		ballWorldFriction,
@@ -36,20 +36,20 @@ struct MutatorConfig {
 		// Restitution between ball and world (arena)
 		ballWorldRestitution,
 
-		jumpAccel = RLConst::JUMP_ACCEL,
-		jumpImmediateForce = RLConst::JUMP_IMMEDIATE_FORCE,
+		jumpAccel = GameConst::JUMP_ACCEL,
+		jumpImmediateForce = GameConst::JUMP_IMMEDIATE_FORCE,
 
-		boostAccelGround = RLConst::BOOST_ACCEL_GROUND,
-		boostAccelAir = RLConst::BOOST_ACCEL_AIR,
-		boostUsedPerSecond = RLConst::BOOST_USED_PER_SECOND,
+		boostAccelGround = GameConst::BOOST_ACCEL_GROUND,
+		boostAccelAir = GameConst::BOOST_ACCEL_AIR,
+		boostUsedPerSecond = GameConst::BOOST_USED_PER_SECOND,
 
-		respawnDelay = RLConst::DEMO_RESPAWN_TIME,
-		bumpCooldownTime = RLConst::BUMP_COOLDOWN_TIME,
+		respawnDelay = GameConst::DEMO_RESPAWN_TIME,
+		bumpCooldownTime = GameConst::BUMP_COOLDOWN_TIME,
 
-		boostPadCooldown_Big = RLConst::BoostPads::COOLDOWN_BIG,
-		boostPadCooldown_Small = RLConst::BoostPads::COOLDOWN_SMALL,
+		boostPadCooldown_Big = GameConst::BoostPads::COOLDOWN_BIG,
+		boostPadCooldown_Small = GameConst::BoostPads::COOLDOWN_SMALL,
 
-		carSpawnBoostAmount = RLConst::BOOST_SPAWN_AMOUNT;
+		carSpawnBoostAmount = GameConst::BOOST_SPAWN_AMOUNT;
 
 	float
 		ballHitExtraForceScale = 1,
@@ -63,14 +63,14 @@ struct MutatorConfig {
 		unlimitedDoubleJumps = false;
 
 	bool rechargeBoostEnabled = false;
-	float rechargeBoostPerSecond = RLConst::RECHARGE_BOOST_PER_SECOND;
-	float rechargeBoostDelay = RLConst::RECHARGE_BOOST_DELAY;
+	float rechargeBoostPerSecond = GameConst::RECHARGE_BOOST_PER_SECOND;
+	float rechargeBoostDelay = GameConst::RECHARGE_BOOST_DELAY;
 
 	DemoMode demoMode = DemoMode::NORMAL;
 	bool enableTeamDemos = false;
 
-	// Only used if the game mode has soccar goals (i.e. soccar, heatseeker, snowday)
-	float goalBaseThresholdY = RLConst::SOCCAR_GOAL_SCORE_BASE_THRESHOLD_Y;
+	// Only used if the game mode has standard goals (i.e. standard, homing, hockey)
+	float goalBaseThresholdY = GameConst::STANDARD_GOAL_SCORE_BASE_THRESHOLD_Y;
 
 	MutatorConfig(GameMode gameMode);
 
@@ -87,4 +87,4 @@ ballHitExtraForceScale, bumpForceScale, ballRadius, unlimitedFlips, unlimitedDou
 rechargeBoostEnabled, rechargeBoostPerSecond, rechargeBoostDelay, \
 demoMode, enableTeamDemos, goalBaseThresholdY
 
-RS_NS_END
+AA_NS_END

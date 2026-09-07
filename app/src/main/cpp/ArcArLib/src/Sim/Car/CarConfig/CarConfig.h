@@ -1,7 +1,7 @@
 #pragma once
 #include "../../../BaseInc.h"
 
-RS_NS_START
+AA_NS_START
 
 struct WheelPairConfig {
 	// Radius of both wheels
@@ -28,8 +28,8 @@ struct CarConfig {
 
 	WheelPairConfig frontWheels, backWheels;
 
-	// Car has three-wheel behavior (psyclops)
-	// NOTE: The psyclops actually has 4 wheels, the front two are combined
+	// Car has three-wheel behavior (body_g)
+	// NOTE: The body_g actually has 4 wheels, the front two are combined
 	// No car actually has only 3 simulated wheels
 	bool threeWheels = false;
 
@@ -43,8 +43,8 @@ WHEEL_PAIR_CONFIG_SERIALIZATION_FIELDS(name.frontWheels), \
 WHEEL_PAIR_CONFIG_SERIALIZATION_FIELDS(name.backWheels) \
 
 // Global car configurations for all car type presets
-// NOTE: CAR_CONFIG_PLANK is the batmobile preset
+// NOTE: CAR_CONFIG_BODY_C is the generic body C preset
 const extern CarConfig
-	CAR_CONFIG_OCTANE, CAR_CONFIG_DOMINUS, CAR_CONFIG_PLANK, CAR_CONFIG_BREAKOUT, CAR_CONFIG_HYBRID, CAR_CONFIG_MERC, CAR_CONFIG_PSYCLOPS;
+	CAR_CONFIG_BODY_A, CAR_CONFIG_BODY_B, CAR_CONFIG_BODY_C, CAR_CONFIG_BODY_D, CAR_CONFIG_BODY_E, CAR_CONFIG_BODY_F, CAR_CONFIG_BODY_G;
 
-RS_NS_END
+AA_NS_END

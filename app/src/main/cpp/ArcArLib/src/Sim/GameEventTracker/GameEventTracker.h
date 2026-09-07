@@ -1,7 +1,7 @@
 #pragma once
 #include "../Arena/Arena.h"
 
-RS_NS_START
+AA_NS_START
 
 typedef std::function<void(class Arena* arena, Car* shooter, Car* passer, void* userInfo)> ShotEventFn;
 typedef std::function<void(class Arena* arena, Car* scorer, Car* passer, void* userInfo)> GoalEventFn;
@@ -22,7 +22,7 @@ struct GameEventTrackerConfig {
 	float shotTouchMinDelay = 0.3f;
 
 	// Added margin for predicting if the ball is scoring or not
-	// By default it errs on the side of scoring (not quite to the extent of normal RL), but this value can be made negative to reverse these effects
+	// By default it errs on the side of scoring (not quite to the extent of the reference game), but this value can be made negative to reverse these effects
 	float predScoreExtraMargin = 0;
 
 	// Minimum time between shot events
@@ -99,4 +99,4 @@ struct GameEventTracker {
 	void ResetPersistentInfo();
 };
 
-RS_NS_END
+AA_NS_END

@@ -1,12 +1,12 @@
 #include "CarConfig.h"
 
-RS_NS_START
+AA_NS_START
 
 // Default car-type config definitions
 
 // For those confused about the hitbox numbers,
 // as any Google search for car hitbox sizes will conflict with this:
-// - They are all wrong. The values that Rocket League gives you
+// - They are all wrong. The values the reference game gives you
 //   when you call the function GetLocalCollisionExtent() are
 //   slightly larger than the actual values used in simulation.
 //
@@ -14,18 +14,18 @@ RS_NS_START
 // - Idk lol.
 //
 // How do I know I'm right?
-// -  The hitbox values I have produce a matching inertia matrix with real RL,
+// -  The hitbox values here produce a matching inertia matrix with the reference game,
 //    the ones everyone else uses/shares do not.
 
 const static Vec HITBOX_SIZES[7] = { 
-	{ 120.507f,	86.6994f,	38.6591f	}, // OCTANE
-	{ 130.427f,	85.7799f,	33.8f		}, // DOMINUS
-	{ 131.32f,	87.1704f,	31.8944f	}, // PLANK
-	{ 133.992f,	83.021f,	32.8f		}, // BREAKOUT
-	{ 129.519f,	84.6879f,	36.6591f	}, // HYBRID
-	{ 123.22f,	79.2103f,	44.1591f	}, // MERC
+	{ 120.507f,	86.6994f,	38.6591f	}, // BODY_A
+	{ 130.427f,	85.7799f,	33.8f		}, // BODY_B
+	{ 131.32f,	87.1704f,	31.8944f	}, // BODY_C
+	{ 133.992f,	83.021f,	32.8f		}, // BODY_D
+	{ 129.519f,	84.6879f,	36.6591f	}, // BODY_E
+	{ 123.22f,	79.2103f,	44.1591f	}, // BODY_F
 
-	{ 120.507f + 0.134f, 86.6994f + 0.134f,	38.6591f + 0.134f}   // PSYCLOPS
+	{ 120.507f + 0.134f, 86.6994f + 0.134f,	38.6591f + 0.134f}   // BODY_G
 };
 
 const static Vec HITBOX_OFFSETS[7] = { 
@@ -91,12 +91,12 @@ const static Vec BACK_WHEELS_OFFSET[7] = {
 		threeWheels \
 	}
 
-MAKE_CAR_CONFIG(OCTANE, 0, false);
-MAKE_CAR_CONFIG(DOMINUS, 1, false);
-MAKE_CAR_CONFIG(PLANK, 2, false);
-MAKE_CAR_CONFIG(BREAKOUT, 3, false);
-MAKE_CAR_CONFIG(HYBRID, 4, false);
-MAKE_CAR_CONFIG(MERC, 5, false);
-MAKE_CAR_CONFIG(PSYCLOPS, 6, true);
+MAKE_CAR_CONFIG(BODY_A, 0, false);
+MAKE_CAR_CONFIG(BODY_B, 1, false);
+MAKE_CAR_CONFIG(BODY_C, 2, false);
+MAKE_CAR_CONFIG(BODY_D, 3, false);
+MAKE_CAR_CONFIG(BODY_E, 4, false);
+MAKE_CAR_CONFIG(BODY_F, 5, false);
+MAKE_CAR_CONFIG(BODY_G, 6, true);
 
-RS_NS_END
+AA_NS_END

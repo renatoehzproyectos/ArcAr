@@ -236,7 +236,7 @@ btDiscreteDynamicsWorld::~btDiscreteDynamicsWorld()
 
 void btDiscreteDynamicsWorld::saveKinematicState(btScalar timeStep)
 {
-	// ROCKETSIM CHANGE: Don't check if kinematic, just use m_nonStaticRigidBodies
+	// ARCAR CHANGE: Don't check if kinematic, just use m_nonStaticRigidBodies
 	for (int i = 0; i < m_nonStaticRigidBodies.size(); i++)
 	{
 		btCollisionObject* colObj = m_collisionObjects[i];
@@ -362,7 +362,7 @@ int btDiscreteDynamicsWorld::stepSimulation(btScalar timeStep, int maxSubSteps, 
 		//clamp the number of substeps, to prevent simulation grinding spiralling down to a halt
 		int clampedSimulationSteps = (numSimulationSubSteps > maxSubSteps) ? maxSubSteps : numSimulationSubSteps;
 
-		// ROCKETSIM CHANGE: We do not need this
+		// ARCAR CHANGE: We do not need this
 		//saveKinematicState(fixedTimeStep * clampedSimulationSteps);
 
 		applyGravity();
@@ -371,13 +371,13 @@ int btDiscreteDynamicsWorld::stepSimulation(btScalar timeStep, int maxSubSteps, 
 		{
 			internalSingleStepSimulation(fixedTimeStep);
 
-			// ROCKETSIM CHANGE: We do not need this
+			// ARCAR CHANGE: We do not need this
 			//synchronizeMotionStates();
 		}
 	}
 	else
 	{
-		// ROCKETSIM CHANGE: We do not need this
+		// ARCAR CHANGE: We do not need this
 		//synchronizeMotionStates();
 	}
 

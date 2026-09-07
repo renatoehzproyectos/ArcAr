@@ -1,9 +1,6 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("ArcArAndroid")
 
-# ---------------------------------------------------------------------------
-# ArcAr physics library (unmodified upstream sources, just relocated on disk)
-# ---------------------------------------------------------------------------
 set(ARCAR_SRC_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/ArcArLib/src")
 set(ARCAR_LIBSRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ArcArLib/libsrc")
 
@@ -30,25 +27,30 @@ set_target_properties(ArcArCore PROPERTIES
     POSITION_INDEPENDENT_CODE ON
 )
 
-# ArcAr/Bullet expect exceptions + RTTI (already passed globally via
-# app/build.gradle cppFlags, kept here too so this target builds standalone).
 target_compile_options(ArcArCore PRIVATE -frtti -fexceptions)
 
-# ---------------------------------------------------------------------------
-# JNI bridge: the only Android-specific code in this project.
-# ---------------------------------------------------------------------------
-add_library(arcar_jni SHARED jni_bridge.cpp)
+add_library(arcar_jni SHARED
+    jni_bridge.cpp
+    game_engine.cpp
+)
 
 find_library(log-lib log)
+find_library(android-lib android)
 
 target_link_libraries(arcar_jni
     ArcArCore
     ${log-lib}
+    ${android-lib}
 )
 
-target_include_directories(arcar_jni PRIVATE "${ARCAR_SRC_DIR}")
+target_include_directories(arcar_jni PRIVATE
+    "${ARCAR_SRC_DIR}"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
 
 set_target_properties(arcar_jni PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
 )
+
+target_compile_options(arcar_jni PRIVATE -frtti -fexceptions)

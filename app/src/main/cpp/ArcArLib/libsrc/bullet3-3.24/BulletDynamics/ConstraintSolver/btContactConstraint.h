@@ -55,7 +55,7 @@ public:
 };
 
 ///very basic collision resolution without friction
-// ROCKETSIM  CHANGE: Add "applyImpulses" boolean for usage without applying the forces
+// ARCAR CHANGE: Add "applyImpulses" boolean for usage without applying the forces
 btScalar resolveSingleCollision(btRigidBody* body1, class btCollisionObject* colObj2, const btVector3& contactPositionWorld, const btVector3& contactNormalOnB, const struct btContactSolverInfo& solverInfo, btScalar distance, bool applyImpulses = true);
 
 ///resolveSingleBilateral is an obsolete methods used for vehicle friction between two dynamic objects

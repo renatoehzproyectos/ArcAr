@@ -2,11 +2,11 @@
 #include "BaseInc.h"
 #include "Math/Math.h"
 
-RS_NS_START
+AA_NS_START
 
 // Constant/default values from the game
 
-namespace RLConst {
+namespace GameConst {
 	constexpr float
 
 		GRAVITY_Z = -650.f,
@@ -15,12 +15,12 @@ namespace RLConst {
 		ARENA_EXTENT_Y = 5120, // Does not include inner-goal
 		ARENA_HEIGHT = 2048,
 
-		ARENA_EXTENT_X_HOOPS = (8900 / 3.f),
-		ARENA_EXTENT_Y_HOOPS = 3581,
-		ARENA_HEIGHT_HOOPS = 1820,
+		ARENA_EXTENT_X_BASKETBALL = (8900 / 3.f),
+		ARENA_EXTENT_Y_BASKETBALL = 3581,
+		ARENA_HEIGHT_BASKETBALL = 1820,
 
-		ARENA_HEIGHT_DROPSHOT = 2024,
-		FLOOR_HEIGHT_DROPSHOT = 1.5f,
+		ARENA_HEIGHT_SHATTER = 2024,
+		FLOOR_HEIGHT_SHATTER = 1.5f,
 
 		ARENA_COLLISION_BASE_FRICTION = 0.6f,
 		ARENA_COLLISION_BASE_RESTITUTION = 0.3f,
@@ -46,9 +46,9 @@ namespace RLConst {
 		BALL_FRICTION = 0.35f,
 		BALL_RESTITUTION = 0.6f, // Bounce factor
 
-		// TODO: Move to a "Hoops" inner namespace, also make a Vec for internal consistency
-		BALL_HOOPS_LAUNCH_Z_VEL = 1000, // Z impulse applied to hoops ball on kickoff
-		BALL_HOOPS_LAUNCH_DELAY = 0.265f,
+		// TODO: Move to a "Basketball" inner namespace, also make a Vec for internal consistency
+		BALL_BASKETBALL_LAUNCH_Z_VEL = 1000, // Z impulse applied to basketball ball on kickoff
+		BALL_BASKETBALL_LAUNCH_DELAY = 0.265f,
 
 		CAR_MAX_SPEED = 2300.f,
 		BALL_MAX_SPEED = 6000.f,
@@ -114,12 +114,12 @@ namespace RLConst {
 		FLIP_BACKWARD_IMPULSE_MAX_SPEED_SCALE = 2.5f,
 		FLIP_BACKWARD_IMPULSE_SCALE_X = 16.f / 15.f,
 
-		BALL_COLLISION_RADIUS_SOCCAR = 91.25f,
-		BALL_COLLISION_RADIUS_HOOPS = 96.3831f,
-		BALL_COLLISION_RADIUS_DROPSHOT = 100.2565f,
+		BALL_COLLISION_RADIUS_STANDARD = 91.25f,
+		BALL_COLLISION_RADIUS_BASKETBALL = 96.3831f,
+		BALL_COLLISION_RADIUS_SHATTER = 100.2565f,
 
-		SOCCAR_GOAL_SCORE_BASE_THRESHOLD_Y = 5124.25f,
-		HOOPS_GOAL_SCORE_THRESHOLD_Z = 270.f,
+		STANDARD_GOAL_SCORE_BASE_THRESHOLD_Y = 5124.25f,
+		BASKETBALL_GOAL_SCORE_THRESHOLD_Z = 270.f,
 
 		CAR_TORQUE_SCALE = 2 * M_PI / (1 << 16) * 1000,
 
@@ -133,10 +133,10 @@ namespace RLConst {
 		CAR_AUTOROLL_TORQUE = 80,
 
 		BALL_CAR_EXTRA_IMPULSE_Z_SCALE = 0.35f,
-		BALL_CAR_EXTRA_IMPULSE_Z_SCALE_HOOPS_GROUND = BALL_CAR_EXTRA_IMPULSE_Z_SCALE * 1.55f,
+		BALL_CAR_EXTRA_IMPULSE_Z_SCALE_BASKETBALL_GROUND = BALL_CAR_EXTRA_IMPULSE_Z_SCALE * 1.55f,
 		BALL_CAR_EXTRA_IMPULSE_FORWARD_SCALE = 0.65f,
 		BALL_CAR_EXTRA_IMPULSE_MAXDELTAVEL_UU = 4600.f,
-		BALL_CAR_EXTRA_IMPULSE_Z_SCALE_HOOPS_NORMAL_Z_THRESH = 0.1f,
+		BALL_CAR_EXTRA_IMPULSE_Z_SCALE_BASKETBALL_NORMAL_Z_THRESH = 0.1f,
 
 		CAR_SPAWN_REST_Z = 17.f,
 		CAR_RESPAWN_Z = 36.f,
@@ -150,7 +150,7 @@ namespace RLConst {
 		CAR_AIR_CONTROL_TORQUE = Vec(130, 95, 400),
 		CAR_AIR_CONTROL_DAMPING = Vec(30, 20, 50);
 
-	// Rocket League uses BulletPhysics, so I'd imagine they use a variation of the btRaycastVehicle
+	// The reference physics model uses BulletPhysics, so this likely uses a variation of the btRaycastVehicle
 	// These are those vehicle's settings
 	namespace BTVehicle {
 		// TODO: These values might change from car to car...? Need to check!
@@ -165,7 +165,7 @@ namespace RLConst {
 			SUSPENSION_SUBTRACTION = 0.05f;
 	}
 
-	namespace Heatseeker {
+	namespace Homing {
 		constexpr float
 			INITIAL_TARGET_SPEED = 2900, // Initial target speed from kickoff (goes to 2985 after the first touch)
 			TARGET_SPEED_INCREMENT = 85, // Increase of target speed each touch
@@ -188,7 +188,7 @@ namespace RLConst {
 			BALL_START_VEL = Vec(0, -65, 650);
 	}
 
-	namespace Snowday {
+	namespace Hockey {
 		constexpr float
 			PUCK_RADIUS = 114.25f, // Real puck radius varies a bit from point to point but it shouldn't matter
 			PUCK_HEIGHT = 62.5f,
@@ -199,7 +199,7 @@ namespace RLConst {
 			PUCK_RESTITUTION = 0.3f;
 	}
 
-	namespace Dropshot {
+	namespace Shatter {
 
 		// TODO: Some of these values are unconfirmed assumptions based on lots of testing,
 		// so there is a chance some of them are slightly off.
@@ -267,11 +267,11 @@ namespace RLConst {
 			BOOST_AMOUNT_SMALL = 12;
 
 		constexpr int
-			LOCS_AMOUNT_SMALL_SOCCAR = 28,
-			LOCS_AMOUNT_SMALL_HOOPS = 14,
+			LOCS_AMOUNT_SMALL_STANDARD = 28,
+			LOCS_AMOUNT_SMALL_BASKETBALL = 14,
 			LOCS_AMOUNT_BIG = 6;
 
-		constexpr Vec LOCS_SMALL_SOCCAR[LOCS_AMOUNT_SMALL_SOCCAR] = {
+		constexpr Vec LOCS_SMALL_STANDARD[LOCS_AMOUNT_SMALL_STANDARD] = {
 			{0.f,		-4240.f,	70.f },
 			{-1792.f,	-4184.f,	70.f },
 			{1792.f,	-4184.f,	70.f },
@@ -302,7 +302,7 @@ namespace RLConst {
 			{0.f,		4240.f,		70.f }
 		};
 
-		constexpr Vec LOCS_BIG_SOCCAR[LOCS_AMOUNT_BIG] = {
+		constexpr Vec LOCS_BIG_STANDARD[LOCS_AMOUNT_BIG] = {
 			{-3584.f,     0.f, 73.f },
 			{ 3584.f,     0.f, 73.f },
 			{-3072.f,  4096.f, 73.f },
@@ -311,9 +311,9 @@ namespace RLConst {
 			{ 3072.f, -4096.f, 73.f }
 		};
 
-		constexpr Vec LOCS_SMALL_HOOPS[LOCS_AMOUNT_SMALL_HOOPS] = {
-			// Psyonix, one of these has a radius that isn't 128, the one at [-1280, 2304, 64].
-			// I'm very confident this is a bug, so I'm not including it in RocketSim, but please fix it.
+		constexpr Vec LOCS_SMALL_BASKETBALL[LOCS_AMOUNT_SMALL_BASKETBALL] = {
+			// One of these has a radius that isn't 128, the one at [-1280, 2304, 64].
+			// I'm very confident this is a bug, so I'm not including it in ArcAr, but please fix it.
 			{1536,	-1024, 64 },
 			{-1280,	-2304, 64 },
 			{0,		-2816, 64 },
@@ -330,7 +330,7 @@ namespace RLConst {
 			{-1280,	 2304, 64 }
 		};
 
-		constexpr Vec LOCS_BIG_HOOPS[LOCS_AMOUNT_BIG] = {
+		constexpr Vec LOCS_BIG_BASKETBALL[LOCS_AMOUNT_BIG] = {
 			{-2176,		 2944, 72 },
 			{ 2176,		-2944, 72 },
 			{-2176,		-2944, 72 },
@@ -342,7 +342,7 @@ namespace RLConst {
 
 	constexpr int
 		CAR_SPAWN_LOCATION_AMOUNT = 5,
-		CAR_SPAWN_LOCATION_AMOUNT_HEATSEEKER = 4,
+		CAR_SPAWN_LOCATION_AMOUNT_HOMING = 4,
 		CAR_RESPAWN_LOCATION_AMOUNT = 4;
 
 	struct CarSpawnPos {
@@ -350,10 +350,10 @@ namespace RLConst {
 		float yawAng;
 	};
 
-	// https://github.com/RLBot/RLBot/wiki/Useful-Game-Values
+	// Derived from community-sourced reverse-engineered game values
 	// For blue team, flip for orange
 	const static CarSpawnPos 
-		CAR_SPAWN_LOCATIONS_SOCCAR[CAR_SPAWN_LOCATION_AMOUNT] = {
+		CAR_SPAWN_LOCATIONS_STANDARD[CAR_SPAWN_LOCATION_AMOUNT] = {
 			{ -2048, -2560, M_PI_4 * 1 },
 			{  2048, -2560, M_PI_4 * 3 },
 			{  -256, -3840, M_PI_4 * 2 },
@@ -362,7 +362,7 @@ namespace RLConst {
 	};
 
 	const static CarSpawnPos
-		CAR_SPAWN_LOCATIONS_HEATSEEKER[CAR_SPAWN_LOCATION_AMOUNT_HEATSEEKER] = {
+		CAR_SPAWN_LOCATIONS_HOMING[CAR_SPAWN_LOCATION_AMOUNT_HOMING] = {
 			{ -1000, -4620, M_PI / 2 },
 			{  1000, -4620, M_PI / 2 },
 			{ -2000, -4620, M_PI / 2 },
@@ -370,7 +370,7 @@ namespace RLConst {
 	};
 
 	const static CarSpawnPos
-		CAR_SPAWN_LOCATIONS_HOOPS[CAR_SPAWN_LOCATION_AMOUNT] = {
+		CAR_SPAWN_LOCATIONS_BASKETBALL[CAR_SPAWN_LOCATION_AMOUNT] = {
 			{ -1536, -3072, M_PI_4 * 2 },
 			{  1536, -3072, M_PI_4 * 2 },
 			{  -256, -2816, M_PI_4 * 2 },
@@ -379,7 +379,7 @@ namespace RLConst {
 	};
 
 	const static CarSpawnPos	
-		CAR_SPAWN_LOCATIONS_DROPSHOT[CAR_SPAWN_LOCATION_AMOUNT] = {
+		CAR_SPAWN_LOCATIONS_SHATTER[CAR_SPAWN_LOCATION_AMOUNT] = {
 			{ -1867, -2380, M_PI_4 * 1 },
 			{  1867, -2380, M_PI_4 * 3 },
 			{  -256, -3576, M_PI_4 * 2 },
@@ -387,10 +387,10 @@ namespace RLConst {
 			{     0, -4088, M_PI_4 * 2 }
 	};
 
-	// https://github.com/RLBot/RLBot/wiki/Useful-Game-Values
+	// Derived from community-sourced reverse-engineered game values
 	// For blue team, flip for orange
 	const static CarSpawnPos // For blue team, flip for orange
-		CAR_RESPAWN_LOCATIONS_SOCCAR[CAR_RESPAWN_LOCATION_AMOUNT] = {
+		CAR_RESPAWN_LOCATIONS_STANDARD[CAR_RESPAWN_LOCATION_AMOUNT] = {
 		{ -2304, -4608, M_PI / 2 },
 		{ -2688, -4608, M_PI / 2 },
 		{  2304, -4608, M_PI / 2 },
@@ -398,7 +398,7 @@ namespace RLConst {
 	};
 
 	const static CarSpawnPos
-		CAR_RESPAWN_LOCATIONS_HOOPS[CAR_RESPAWN_LOCATION_AMOUNT] = {
+		CAR_RESPAWN_LOCATIONS_BASKETBALL[CAR_RESPAWN_LOCATION_AMOUNT] = {
 		{ -1920, -3072, M_PI / 2 },
 		{ -1152, -3072, M_PI / 2 },
 		{  1920, -3072, M_PI / 2 },
@@ -406,7 +406,7 @@ namespace RLConst {
 	};
 
 	const static CarSpawnPos
-		CAR_RESPAWN_LOCATIONS_DROPSHOT[CAR_RESPAWN_LOCATION_AMOUNT] = {
+		CAR_RESPAWN_LOCATIONS_SHATTER[CAR_RESPAWN_LOCATION_AMOUNT] = {
 		{ -2176, -3410, M_PI / 2 },
 		{ -1152, -3100, M_PI / 2 },
 		{  2176, -3410, M_PI / 2 },
@@ -527,4 +527,4 @@ namespace RLConst {
 	};
 }
 
-RS_NS_END
+AA_NS_END

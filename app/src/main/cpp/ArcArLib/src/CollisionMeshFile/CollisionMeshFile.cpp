@@ -6,7 +6,7 @@
 #include "../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btBvhTriangleMeshShape.h"
 #include "../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btTriangleMesh.h"
 
-RS_NS_START
+AA_NS_START
 
 void CollisionMeshFile::ReadFromStream(DataStreamIn& in, bool silent, std::string filePath) {
 	constexpr char ERROR_PREFIX_STR[] = " > CollisionMeshFile::ReadFromStream(): ";
@@ -19,8 +19,8 @@ void CollisionMeshFile::ReadFromStream(DataStreamIn& in, bool silent, std::strin
 	in.Read(numTris);
 	in.Read(numVertices);
 
-	if (RS_MIN(numTris, numVertices) <= 0 || RS_MAX(numTris, numVertices) > MAX_VERT_OR_TRI_COUNT) {
-		RS_ERR_CLOSE(
+	if (AA_MIN(numTris, numVertices) <= 0 || AA_MAX(numTris, numVertices) > MAX_VERT_OR_TRI_COUNT) {
+		AA_ERR_CLOSE(
 			ERROR_PREFIX_STR << "Invalid collision mesh file at \"" << filePath <<
 			"\" (bad triangle/vertex count: [" << numTris << ", " << numVertices << "])");
 	}
@@ -34,9 +34,9 @@ void CollisionMeshFile::ReadFromStream(DataStreamIn& in, bool silent, std::strin
 	for (Vertex& vert : vertices)
 		vert = in.Read<Vertex>();
 
-#ifndef RS_MAX_SPEED
+#ifndef AA_MAX_SPEED
 	if (in.IsOverflown()) {
-		RS_ERR_CLOSE(
+		AA_ERR_CLOSE(
 			ERROR_PREFIX_STR << "Invalid collision mesh file at \"" << filePath <<
 			"\" (input data overflown by " << (in.pos - in.data.size()) << " bytes!)");
 	}
@@ -46,7 +46,7 @@ void CollisionMeshFile::ReadFromStream(DataStreamIn& in, bool silent, std::strin
 		for (int i = 0; i < 3; i++) {
 			int vertIndex = tri.vertexIndexes[i];
 			if (vertIndex < 0 || vertIndex >= numVertices) {
-				RS_ERR_CLOSE(
+				AA_ERR_CLOSE(
 					ERROR_PREFIX_STR << "Invalid collision mesh file at \"" << filePath <<
 					"\" (bad triangle vertex index)");
 			}
@@ -57,7 +57,7 @@ void CollisionMeshFile::ReadFromStream(DataStreamIn& in, bool silent, std::strin
 	UpdateHash();
 
 	if (!silent)
-		RS_LOG("   > Loaded " << numVertices << " verts and " << numTris << " tris, hash: 0x" << std::hex << hash);
+		AA_LOG("   > Loaded " << numVertices << " verts and " << numTris << " tris, hash: 0x" << std::hex << hash);
 }
 
 btTriangleMesh* CollisionMeshFile::MakeBulletMesh() {
@@ -98,4 +98,4 @@ void CollisionMeshFile::UpdateHash() {
 	this->hash = hash;
 }
 
-RS_NS_END
+AA_NS_END

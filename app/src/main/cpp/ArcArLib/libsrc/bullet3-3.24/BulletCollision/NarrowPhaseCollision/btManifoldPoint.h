@@ -149,7 +149,7 @@ public:
 	btVector3 m_lateralFrictionDir1;
 	btVector3 m_lateralFrictionDir2;
 
-	// ROCKETSIM CHANGE: Add flag for marking manifold point as needing special resolution
+	// ARCAR CHANGE: Add flag for marking manifold point as needing special resolution
 	bool m_isSpecial;
 
 	btScalar getDistance() const

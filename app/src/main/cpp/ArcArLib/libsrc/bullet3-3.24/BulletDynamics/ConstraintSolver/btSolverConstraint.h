@@ -63,7 +63,7 @@ btSolverConstraint
 	int m_solverBodyIdB;
 
 public:
-	// ROCKETSIM CHANGE: Add matching property for btManifoldPoint.m_isSpecial
+	// ARCAR CHANGE: Add matching property for btManifoldPoint.m_isSpecial
 	bool m_isSpecial;
 
 	enum btSolverConstraintType

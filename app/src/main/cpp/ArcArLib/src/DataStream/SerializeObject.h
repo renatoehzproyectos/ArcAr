@@ -1,7 +1,7 @@
 #pragma once
 #include "../Framework.h"
 
-RS_NS_START
+AA_NS_START
 
 struct SerializeObject {
 	void* ptr;
@@ -21,4 +21,4 @@ struct SerializeObject {
 	}
 };
 
-RS_NS_END
+AA_NS_END

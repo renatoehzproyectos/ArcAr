@@ -190,7 +190,7 @@ int btPersistentManifold::sortCachedPoints(const btManifoldPoint& pt)
 
 int btPersistentManifold::getCacheEntry(const btManifoldPoint& newPoint) const
 {
-	// ROCKETSIM CHANGE: Don't overwrite old manifolds with new manifolds
+	// ARCAR CHANGE: Don't overwrite old manifolds with new manifolds
 	// Disabling this return makes ball-arena collisions far less accurate to the game
 	return -1;
 

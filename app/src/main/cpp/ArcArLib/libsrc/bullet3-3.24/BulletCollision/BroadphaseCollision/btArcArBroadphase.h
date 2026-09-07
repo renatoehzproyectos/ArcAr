@@ -3,7 +3,7 @@
 #include "btOverlappingPairCache.h"
 #include <vector>
 
-struct btRSBroadphaseProxy : public btBroadphaseProxy
+struct btArcArBroadphaseProxy : public btBroadphaseProxy
 {
 	bool isStatic;
 
@@ -15,9 +15,9 @@ struct btRSBroadphaseProxy : public btBroadphaseProxy
 
 	//	int			m_handleId;
 
-	btRSBroadphaseProxy() {};
+	btArcArBroadphaseProxy() {};
 
-	btRSBroadphaseProxy(
+	btArcArBroadphaseProxy(
 		const btVector3& minpt, const btVector3& maxpt, int shapeType, void* userPtr, int collisionFilterGroup, int collisionFilterMask, 
 		bool isStatic, int cellIdx, int i, int j, int k)
 		: btBroadphaseProxy(minpt, maxpt, userPtr, collisionFilterGroup, collisionFilterMask), 
@@ -30,10 +30,10 @@ struct btRSBroadphaseProxy : public btBroadphaseProxy
 	SIMD_FORCE_INLINE int GetNextFree() const { return m_nextFree; }
 };
 
-// Custom broadphase implementation for RocketSim
+// Custom broadphase implementation for ArcAr
 // Uses spacial division with a fixed voxel grid
 // Somewhat based off of btSimpleBroadphase
-class btRSBroadphase : public btBroadphaseInterface
+class btArcArBroadphase : public btBroadphaseInterface
 {
 public:
 	int m_numHandles;  // number of active handles
@@ -51,18 +51,18 @@ public:
 	int totalRealPairs = 0;
 	int totalItrs = 0;
 
-	std::vector<std::pair<btRSBroadphaseProxy*, btRSBroadphaseProxy*>> activePairs;
+	std::vector<std::pair<btArcArBroadphaseProxy*, btArcArBroadphaseProxy*>> activePairs;
 
 	struct Cell {
 		constexpr static int RESERVED_SIZE = 4;
-		std::vector<btRSBroadphaseProxy*> dynHandles;
-		std::vector<btRSBroadphaseProxy*> staticHandles;
+		std::vector<btArcArBroadphaseProxy*> dynHandles;
+		std::vector<btArcArBroadphaseProxy*> staticHandles;
 		Cell() {
 			dynHandles.reserve(RESERVED_SIZE);
 			staticHandles.reserve(RESERVED_SIZE);
 		}
 
-		void RemoveDyn(btRSBroadphaseProxy* proxy) {
+		void RemoveDyn(btArcArBroadphaseProxy* proxy) {
 			for (int i = 0; i < dynHandles.size(); i++) {
 				if (dynHandles[i] == proxy) {
 					dynHandles.erase(dynHandles.begin() + i);
@@ -71,7 +71,7 @@ public:
 			}
 		}
 
-		void RemoveStatic(btRSBroadphaseProxy* proxy) {
+		void RemoveStatic(btArcArBroadphaseProxy* proxy) {
 			for (int i = 0; i < staticHandles.size(); i++) {
 				if (staticHandles[i] == proxy) {
 					staticHandles.erase(staticHandles.begin() + i);
@@ -107,7 +107,7 @@ public:
 		return i * cellsY * cellsZ + j * cellsZ + k;
 	}
 
-	btRSBroadphaseProxy* m_pHandles;  // handles pool
+	btArcArBroadphaseProxy* m_pHandles;  // handles pool
 
 	void* m_pHandlesRawPtr;
 	int m_firstFreeHandle;  // free handles list
@@ -123,7 +123,7 @@ public:
 		return freeHandle;
 	}
 
-	void freeHandle(btRSBroadphaseProxy* proxy) {
+	void freeHandle(btArcArBroadphaseProxy* proxy) {
 		int handle = int(proxy - m_pHandles);
 		btAssert(handle >= 0 && handle < m_maxHandles);
 		if (handle == m_LastHandleIndex) {
@@ -142,13 +142,13 @@ public:
 
 	int m_invalidPair;
 
-	inline btRSBroadphaseProxy* getRSProxyFromProxy(btBroadphaseProxy* proxy) {
-		btRSBroadphaseProxy* proxy0 = static_cast<btRSBroadphaseProxy*>(proxy);
+	inline btArcArBroadphaseProxy* getArcArProxyFromProxy(btBroadphaseProxy* proxy) {
+		btArcArBroadphaseProxy* proxy0 = static_cast<btArcArBroadphaseProxy*>(proxy);
 		return proxy0;
 	}
 
-	inline const btRSBroadphaseProxy* getRSProxyFromProxy(btBroadphaseProxy* proxy) const {
-		const btRSBroadphaseProxy* proxy0 = static_cast<const btRSBroadphaseProxy*>(proxy);
+	inline const btArcArBroadphaseProxy* getArcArProxyFromProxy(btBroadphaseProxy* proxy) const {
+		const btArcArBroadphaseProxy* proxy0 = static_cast<const btArcArBroadphaseProxy*>(proxy);
 		return proxy0;
 	}
 
@@ -159,10 +159,10 @@ public:
 
 protected:
 public:
-	btRSBroadphase(btVector3 min, btVector3 max, float cellSize, btOverlappingPairCache* overlappingPairCache, int maxProxies = 65536);
-	virtual ~btRSBroadphase();
+	btArcArBroadphase(btVector3 min, btVector3 max, float cellSize, btOverlappingPairCache* overlappingPairCache, int maxProxies = 65536);
+	virtual ~btArcArBroadphase();
 
-	static bool aabbOverlap(btRSBroadphaseProxy* proxy0, btRSBroadphaseProxy* proxy1);
+	static bool aabbOverlap(btArcArBroadphaseProxy* proxy0, btArcArBroadphaseProxy* proxy1);
 
 	virtual btBroadphaseProxy* createProxy(const btVector3& aabbMin, const btVector3& aabbMax, int shapeType, void* userPtr, int collisionFilterGroup, int collisionFilterMask, btCollisionDispatcher* dispatcher);
 
@@ -192,7 +192,7 @@ public:
 	}
 
 	virtual void printStats() {
-		//		printf("btRSBroadphase.h\n");
+		//		printf("btArcArBroadphase.h\n");
 		//		printf("numHandles = %d, maxHandles = %d\n",m_numHandles,m_maxHandles);
 	}
 };

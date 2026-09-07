@@ -1,6 +1,6 @@
 #include "ArenaConfig.h"
 
-RS_NS_START
+AA_NS_START
 
 void ArenaConfig::Serialize(DataStreamOut& out) const {
 	out.WriteMultiple(ARENA_CONFIG_SERIALIZATION_FIELDS);
@@ -27,11 +27,11 @@ void ArenaConfig::Deserialize(DataStreamIn& in) {
 			config.Deserialize(in);
 
 			if (in.IsOverflown())
-				RS_ERR_CLOSE("Overflow after reading custom boost (" << (i + 1) << " / " << numPads << ")");
+				AA_ERR_CLOSE("Overflow after reading custom boost (" << (i + 1) << " / " << numPads << ")");
 
 			customBoostPads.push_back(config);
 		}
 	}
 }
 
-RS_NS_END
+AA_NS_END

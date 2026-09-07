@@ -9,9 +9,9 @@
 
 class btTriangleMesh;
 
-RS_NS_START
+AA_NS_START
 
-// Collision mesh file structure based off of the one in https://github.com/ZealanL/RLArenaCollisionDumper
+// Collision mesh file structure for arena geometry
 struct CollisionMeshFile {
 
 	struct Triangle {
@@ -37,4 +37,4 @@ struct CollisionMeshFile {
 	void UpdateHash();
 };
 
-RS_NS_END
+AA_NS_END

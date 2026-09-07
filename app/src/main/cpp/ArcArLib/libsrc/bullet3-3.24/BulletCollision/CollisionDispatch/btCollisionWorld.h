@@ -202,7 +202,7 @@ public:
 		{
 		}
 
-		// ROCKETSIM CHANGE: Implementation moved to .cpp
+		// ARCAR CHANGE: Implementation moved to .cpp
 		virtual bool needsCollision(btBroadphaseProxy* proxy0) const;
 
 		virtual btScalar addSingleResult(LocalRayResult& rayResult, bool normalInWorldSpace) = 0;

@@ -1,7 +1,7 @@
 #pragma once
 #include "../Arena/Arena.h"
 
-RS_NS_START
+AA_NS_START
 
 // An external tool struct that predicts the ball of a given arena
 struct BallPredTracker {
@@ -35,4 +35,4 @@ struct BallPredTracker {
 	BallState GetBallStateForTime(float predTime) const;
 };
 
-RS_NS_END
+AA_NS_END

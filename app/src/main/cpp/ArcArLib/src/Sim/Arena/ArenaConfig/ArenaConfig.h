@@ -5,7 +5,7 @@
 
 #include "../../BoostPad/BoostPad.h"
 
-RS_NS_START
+AA_NS_START
 
 // Mode of speed/memory optimization for the arena
 // Will affect whether high memory consumption is used to slightly increase speed or not
@@ -29,10 +29,10 @@ struct ArenaConfig {
 		maxAABBLen = 370;
 
 	// Ball rotation updates are skipped to improve performance
-	// Disabled in snowday
+	// Disabled in hockey
 	bool noBallRot = true;
 
-	// Use a custom broadphase designed for RocketSim
+	// Use a custom broadphase designed for ArcAr
 	// Improves performance, but becomes inefficient on giant maps
 	// Turn this off if you want to use a giant map
 	bool useCustomBroadphase = true;
@@ -52,4 +52,4 @@ struct ArenaConfig {
 #define ARENA_CONFIG_SERIALIZATION_FIELDS \
 minPos, maxPos, maxAABBLen, noBallRot, useCustomBroadphase
 
-RS_NS_END
+AA_NS_END

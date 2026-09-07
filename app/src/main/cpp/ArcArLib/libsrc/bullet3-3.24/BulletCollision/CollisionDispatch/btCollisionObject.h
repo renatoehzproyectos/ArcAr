@@ -127,7 +127,7 @@ public:
 
 	btVector3 m_customDebugColorRGB;
 
-	// ROCKETSIM CHANGE: Add custom info for special collision resolution
+	// ARCAR CHANGE: Add custom info for special collision resolution
 	struct btSpecialResolveInfo {
 		int m_numSpecialCollisions;
 		btVector3 m_totalNormal;

@@ -1,7 +1,7 @@
 #pragma once
 #include "../PhysState/PhysState.h"
 
-#include "../../RLConst.h"
+#include "../../GameConst.h"
 #include "../../DataStream/DataStreamIn.h"
 #include "../../DataStream/DataStreamOut.h"
 
@@ -9,11 +9,11 @@
 
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btRigidBody.h"
 #include "../../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btSphereShape.h"
-#include "../Arena/DropshotTiles/DropshotTiles.h"
+#include "../Arena/ShatterTiles/ShatterTiles.h"
 
 class btDynamicsWorld;
 
-RS_NS_START
+AA_NS_START
 
 struct BallState : public PhysState {
 	// Incremented every update, reset when SetState() is called
@@ -21,17 +21,17 @@ struct BallState : public PhysState {
 	// Not serialized
 	uint64_t tickCountSinceUpdate = 0;
 
-	struct HeatseekerInfo {
+	struct HomingInfo {
 		// Which net the ball should seek towards
 		// When 0, no net
 		float yTargetDir = 0;
 
-		float curTargetSpeed = RLConst::Heatseeker::INITIAL_TARGET_SPEED;
+		float curTargetSpeed = GameConst::Homing::INITIAL_TARGET_SPEED;
 		float timeSinceHit = 0;
 	};
-	HeatseekerInfo hsInfo;
+	HomingInfo hsInfo;
 
-	struct DropshotInfo {
+	struct ShatterInfo {
 		// Charge level number, which controls the radius of damage when hitting tiles
 		// 1 = damages r=1 -> 1 tile
 		// 2 = damages r=2 -> 7 tiles
@@ -44,10 +44,10 @@ struct BallState : public PhysState {
 		bool hasDamaged = false;
 		uint64_t lastDamageTick; // Only valid if hasDamaged
 	};
-	DropshotInfo dsInfo;
+	ShatterInfo dsInfo;
 
 	BallState() : PhysState() {
-		pos.z = RLConst::BALL_REST_Z;
+		pos.z = GameConst::BALL_REST_Z;
 	}
 
 	bool Matches(const BallState& other, float marginPos = 0.8, float marginVel = 0.4, float marginAngVel = 0.02) const;
@@ -104,8 +104,8 @@ public:
 	);
 	void _OnWorldCollision(GameMode gameMode, Vec normal, float tickTime);
 	// Returns true if the tiles state was modified
-	bool _OnDropshotTileCollision(
-		DropshotTilesState& tilesState, int tileTotalIndex, const btCollisionObject* tileObj, 
+	bool _OnShatterTileCollision(
+		ShatterTilesState& tilesState, int tileTotalIndex, const btCollisionObject* tileObj, 
 		uint64_t tickCount, float tickTime
 	);
 		
@@ -120,4 +120,4 @@ private:
 	Ball() {}
 };
 
-RS_NS_END
+AA_NS_END

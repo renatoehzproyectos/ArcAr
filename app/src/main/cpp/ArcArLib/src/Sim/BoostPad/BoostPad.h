@@ -8,7 +8,7 @@
 
 #include "../MutatorConfig/MutatorConfig.h"
 
-RS_NS_START
+AA_NS_START
 
 struct BoostPadConfig {
 	Vec pos;
@@ -57,4 +57,4 @@ private:
 	BoostPad() {}
 };
 
-RS_NS_END
+AA_NS_END

@@ -9,7 +9,7 @@
 #include "../BoostPad/BoostPadGrid/BoostPadGrid.h"
 #include "../MutatorConfig/MutatorConfig.h"
 #include "ArenaConfig/ArenaConfig.h"
-#include "DropshotTiles/DropshotTiles.h"
+#include "ShatterTiles/ShatterTiles.h"
 
 #include "../../../libsrc/bullet3-3.24/BulletCollision/BroadphaseCollision/btDbvtBroadphase.h"
 #include "../../../libsrc/bullet3-3.24/BulletCollision/CollisionShapes/btStaticPlaneShape.h"
@@ -19,7 +19,7 @@
 #include "../../../libsrc/bullet3-3.24/BulletDynamics/Dynamics/btDiscreteDynamicsWorld.h"
 #include "../../../libsrc/bullet3-3.24/BulletCollision/CollisionDispatch/btDefaultCollisionConfiguration.h"
 
-RS_NS_START
+AA_NS_START
 
 typedef std::function<void(class Arena* arena, Team scoringTeam, void* userInfo)> GoalScoreEventFn;
 typedef std::function<void(class Arena* arena, Car* bumper, Car* victim, bool isDemo, void* userInfo)> CarBumpEventFn;
@@ -47,7 +47,7 @@ public:
 
 	MutatorConfig _mutatorConfig;
 
-	DropshotTilesState _dropshotTilesState;
+	ShatterTilesState _shatterTilesState;
 
 	const MutatorConfig& GetMutatorConfig() { return _mutatorConfig; }
 	void SetMutatorConfig(const MutatorConfig& mutatorConfig);
@@ -68,7 +68,7 @@ public:
 
 	// Returns true if added, false if car was already added
 	bool _AddCarFromPtr(Car* car);
-	Car* AddCar(Team team, const CarConfig& config = CAR_CONFIG_OCTANE);
+	Car* AddCar(Team team, const CarConfig& config = CAR_CONFIG_BODY_A);
 
 	// Returns false if the car ID was not found in the cars list
 	bool RemoveCar(uint32_t id);
@@ -93,7 +93,7 @@ public:
 	std::vector<btRigidBody*> _worldCollisionRBs = {};
 	std::vector<btBvhTriangleMeshShape*> _worldCollisionBvhShapes = {};
 	std::vector<btStaticPlaneShape*> _worldCollisionPlaneShapes = {};
-	std::vector<btRigidBody*> _worldDropshotTileRBs = {};
+	std::vector<btRigidBody*> _worldShatterTileRBs = {};
 
 	struct {
 		GoalScoreEventFn func = NULL;
@@ -134,7 +134,7 @@ public:
 	void ResetToRandomKickoff(int seed = -1);
 
 	// Returns true if the ball is probably going in, does not account for wall or ceiling bounces
-	// NOTE: Purposefully overestimates, just like the real RL's shot prediction
+	// NOTE: Purposefully overestimates, just like the reference game's shot prediction
 	// To check which goal it will score in, use the ball's velocity
 	// Margin can be manually adjusted with extraMargin (negative to prevent overestimating)
 	bool IsBallProbablyGoingIn(float maxTime = 2.f, float extraMargin = 0, Team* goalTeamOut = NULL) const;
@@ -175,8 +175,8 @@ public:
 		return _config.memWeightMode;
 	}
 
-	DropshotTilesState GetDropshotTilesState() const { return _dropshotTilesState; };
-	void SetDropshotTilesState(const DropshotTilesState& tilesState);
+	ShatterTilesState GetShatterTilesState() const { return _shatterTilesState; };
+	void SetShatterTilesState(const ShatterTilesState& tilesState);
 
 private:
 	
@@ -187,4 +187,4 @@ private:
 	ArenaConfig _config;
 };
 
-RS_NS_END
+AA_NS_END

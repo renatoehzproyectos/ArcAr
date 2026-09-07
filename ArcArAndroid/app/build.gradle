@@ -1,0 +1,55 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.arcar.android'
+    compileSdk 34
+    ndkVersion "26.1.10909125"
+
+    defaultConfig {
+        applicationId "com.arcar.android"
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+
+        externalNativeBuild {
+            cmake {
+                // Build for the widest device coverage; trim this list if you only need one ABI.
+                abiFilters "arm64-v8a", "armeabi-v7a", "x86_64"
+                arguments "-DANDROID_STL=c++_shared"
+                cppFlags "-std=c++20", "-frtti", "-fexceptions"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path "src/main/cpp/CMakeLists.txt"
+            version "3.22.1"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    // No UI resources are used by this app on purpose: it exists solely to load and
+    // execute the ArcAr native library and report the result via Logcat.
+    buildFeatures {
+        viewBinding false
+        buildConfig true
+    }
+}

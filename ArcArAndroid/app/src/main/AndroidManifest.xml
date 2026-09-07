@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/auto">
+
+    <application
+        android:label="ArcAr"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.NoActionBar">
+
+        <!--
+             MainActivity has no layout / no view hierarchy of its own.
+             It exists only so the APK is launchable; all real work happens
+             in native code (see src/main/cpp/jni_bridge.cpp).
+        -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+
+</manifest>

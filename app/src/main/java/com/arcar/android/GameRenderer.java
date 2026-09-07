@@ -36,6 +36,9 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
     private int width, height;
     private long lastNs = 0;
+    private volatile boolean engineReady = false;
+
+    public void setEngineReady(boolean ready) { engineReady = ready; }
 
     // HUD callbacks
     public interface HudListener {
@@ -90,11 +93,21 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         lastNs = now;
         if (dt > 0.1f) dt = 0.1f;
 
-        NativeBridge.nativeUpdate(dt);
+        if (!engineReady) {
+            GLES20.glClearColor(0.05f, 0.07f, 0.12f, 1f);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            return;
+        }
 
-        float[] local = new float[30];
-        NativeBridge.nativeGetSnapshot(local);
-        updateSnapshot(local);
+        try {
+            NativeBridge.nativeUpdate(dt);
+            float[] local = new float[30];
+            NativeBridge.nativeGetSnapshot(local);
+            updateSnapshot(local);
+        } catch (Throwable t) {
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            return;
+        }
 
         float boost, speed;
         boolean ballCam, ready;

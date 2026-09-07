@@ -1,5 +1,3 @@
-// jni_bridge.cpp — JNI surface for the playable ArcAr client
-
 #include <jni.h>
 #include <android/log.h>
 #include <string>
@@ -15,7 +13,7 @@ using namespace ArcAr;
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_com_arcar_android_NativeBridge_nativeInit(JNIEnv* env, jclass, jstring meshesDirJava) {
+Java_com_arcar_android_NativeBridge_nativeInitImpl(JNIEnv* env, jclass, jstring meshesDirJava) {
 	const char* c = env->GetStringUTFChars(meshesDirJava, nullptr);
 	std::string meshesDir = c ? c : "";
 	env->ReleaseStringUTFChars(meshesDirJava, c);
@@ -24,12 +22,12 @@ Java_com_arcar_android_NativeBridge_nativeInit(JNIEnv* env, jclass, jstring mesh
 }
 
 JNIEXPORT void JNICALL
-Java_com_arcar_android_NativeBridge_nativeShutdown(JNIEnv*, jclass) {
+Java_com_arcar_android_NativeBridge_nativeShutdownImpl(JNIEnv*, jclass) {
 	GameEngine::Instance().Shutdown();
 }
 
 JNIEXPORT void JNICALL
-Java_com_arcar_android_NativeBridge_nativeSetControls(
+Java_com_arcar_android_NativeBridge_nativeSetControlsImpl(
 		JNIEnv*, jclass,
 		jfloat throttle, jfloat steer,
 		jfloat pitch, jfloat yaw, jfloat roll,
@@ -47,28 +45,27 @@ Java_com_arcar_android_NativeBridge_nativeSetControls(
 }
 
 JNIEXPORT void JNICALL
-Java_com_arcar_android_NativeBridge_nativeToggleBallCam(JNIEnv*, jclass) {
+Java_com_arcar_android_NativeBridge_nativeToggleBallCamImpl(JNIEnv*, jclass) {
 	GameEngine::Instance().ToggleBallCam();
 }
 
 JNIEXPORT void JNICALL
-Java_com_arcar_android_NativeBridge_nativeSetBallCam(JNIEnv*, jclass, jboolean on) {
+Java_com_arcar_android_NativeBridge_nativeSetBallCamImpl(JNIEnv*, jclass, jboolean on) {
 	GameEngine::Instance().SetBallCam(on == JNI_TRUE);
 }
 
 JNIEXPORT void JNICALL
-Java_com_arcar_android_NativeBridge_nativeReset(JNIEnv*, jclass) {
+Java_com_arcar_android_NativeBridge_nativeResetImpl(JNIEnv*, jclass) {
 	GameEngine::Instance().ResetToKickoff();
 }
 
 JNIEXPORT void JNICALL
-Java_com_arcar_android_NativeBridge_nativeUpdate(JNIEnv*, jclass, jfloat dt) {
+Java_com_arcar_android_NativeBridge_nativeUpdateImpl(JNIEnv*, jclass, jfloat dt) {
 	GameEngine::Instance().Update(dt);
 }
 
-// float[30] snapshot layout — see NativeBridge.java
 JNIEXPORT jboolean JNICALL
-Java_com_arcar_android_NativeBridge_nativeGetSnapshot(JNIEnv* env, jclass, jfloatArray outArr) {
+Java_com_arcar_android_NativeBridge_nativeGetSnapshotImpl(JNIEnv* env, jclass, jfloatArray outArr) {
 	if (!outArr) return JNI_FALSE;
 	const jsize len = env->GetArrayLength(outArr);
 	if (len < 30) return JNI_FALSE;

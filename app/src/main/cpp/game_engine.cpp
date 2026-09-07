@@ -3,6 +3,7 @@
 #include <android/log.h>
 #include <cmath>
 #include <cstring>
+#include <map>
 
 #define LOG_TAG "ArcArNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -24,19 +25,35 @@ bool GameEngine::Init(const std::string& meshesDir) {
 	if (ready_) return true;
 
 	try {
-		// Init collision meshes if folder exists; otherwise still create arena
-		// (missing meshes → cars/ball still work on internal collision, goals may be limited)
+		// Prefer mesh folder if present; otherwise empty InitFromMem so stage=INITIALIZED.
+		bool inited = false;
 		if (!meshesDir.empty()) {
 			try {
 				ArcAr::Init(meshesDir, /*silent=*/false);
+				inited = true;
+				LOGI("Init from mesh folder OK");
 			} catch (const std::exception& e) {
-				LOGI("Mesh init note: %s (continuing)", e.what());
+				LOGI("Mesh folder init failed: %s", e.what());
 			} catch (...) {
-				LOGI("Mesh init failed (continuing without external meshes)");
+				LOGI("Mesh folder init failed");
+			}
+		}
+		if (!inited) {
+			try {
+				std::map<GameMode, std::vector<FileData>> empty;
+				ArcAr::InitFromMem(empty, /*silent=*/false);
+				LOGI("InitFromMem (empty) OK");
+			} catch (const std::exception& e) {
+				LOGE("InitFromMem failed: %s", e.what());
+				return false;
+			} catch (...) {
+				LOGE("InitFromMem failed");
+				return false;
 			}
 		}
 
 		ArenaConfig cfg{};
+		cfg.memWeightMode = ArenaMemWeightMode::LIGHT;
 		arena_ = Arena::Create(GameMode::STANDARD, cfg, 120.f);
 		if (!arena_) {
 			LOGE("Arena::Create failed");

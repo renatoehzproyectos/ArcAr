@@ -22,62 +22,72 @@ GameEngine::~GameEngine() {
 
 bool GameEngine::Init(const std::string& meshesDir) {
 	std::lock_guard<std::mutex> lock(mutex_);
-	if (ready_) return true;
+	if (ready_) {
+		LOGI("Init: already ready");
+		return true;
+	}
+
+	LOGI("Init: begin meshesDir=%s", meshesDir.c_str());
 
 	try {
-		// Prefer mesh folder if present; otherwise empty InitFromMem so stage=INITIALIZED.
 		bool inited = false;
 		if (!meshesDir.empty()) {
 			try {
+				LOGI("Init: ArcAr::Init(folder)...");
 				ArcAr::Init(meshesDir, /*silent=*/false);
 				inited = true;
-				LOGI("Init from mesh folder OK");
+				LOGI("Init: ArcAr::Init(folder) OK");
 			} catch (const std::exception& e) {
-				LOGI("Mesh folder init failed: %s", e.what());
+				LOGE("Init: folder failed: %s", e.what());
 			} catch (...) {
-				LOGI("Mesh folder init failed");
+				LOGE("Init: folder failed (unknown)");
 			}
 		}
 		if (!inited) {
 			try {
+				LOGI("Init: InitFromMem(empty)...");
 				std::map<GameMode, std::vector<FileData>> empty;
 				ArcAr::InitFromMem(empty, /*silent=*/false);
-				LOGI("InitFromMem (empty) OK");
+				LOGI("Init: InitFromMem OK");
 			} catch (const std::exception& e) {
-				LOGE("InitFromMem failed: %s", e.what());
+				LOGE("Init: InitFromMem failed: %s", e.what());
 				return false;
 			} catch (...) {
-				LOGE("InitFromMem failed");
+				LOGE("Init: InitFromMem failed (unknown)");
 				return false;
 			}
 		}
 
+		LOGI("Init: Arena::Create...");
 		ArenaConfig cfg{};
 		cfg.memWeightMode = ArenaMemWeightMode::LIGHT;
+		// Prefer custom broadphase off on mobile if it causes issues
+		cfg.useCustomBroadphase = false;
 		arena_ = Arena::Create(GameMode::STANDARD, cfg, 120.f);
 		if (!arena_) {
-			LOGE("Arena::Create failed");
+			LOGE("Init: Arena::Create returned null");
 			return false;
 		}
+		LOGI("Init: Arena OK");
 
+		LOGI("Init: AddCar...");
 		player_ = arena_->AddCar(Team::BLUE, CAR_CONFIG_BODY_C);
 		if (!player_) {
-			LOGE("AddCar failed");
+			LOGE("Init: AddCar failed");
 			delete arena_;
 			arena_ = nullptr;
 			return false;
 		}
 		playerId_ = player_->id;
+		LOGI("Init: car id=%u", playerId_);
 
-		// Kickoff-ish spawn: car on blue side, ball center
 		{
 			CarState cs = player_->GetState();
-			cs.pos = Vec(0.f, -4608.f, GameConst::CAR_SPAWN_REST_Z);
+			cs.pos = Vec(0.f, -2560.f, GameConst::CAR_SPAWN_REST_Z);
 			cs.rotMat = RotMat::GetIdentity();
-			// Face toward midfield (+Y)
 			cs.vel = Vec(0, 0, 0);
 			cs.angVel = Vec(0, 0, 0);
-			cs.boost = 33.f;
+			cs.boost = 100.f;
 			player_->SetState(cs);
 		}
 		{
@@ -91,15 +101,19 @@ bool GameEngine::Init(const std::string& meshesDir) {
 		ballCam_ = true;
 		timeAccum_ = 0.f;
 		ready_ = true;
-		LOGI("GameEngine ready — car id=%u", playerId_);
+		LOGI("Init: READY");
 		return true;
 	} catch (const std::exception& e) {
-		LOGE("GameEngine::Init exception: %s", e.what());
-		Shutdown();
+		LOGE("Init: exception: %s", e.what());
+		if (arena_) { delete arena_; arena_ = nullptr; }
+		player_ = nullptr;
+		ready_ = false;
 		return false;
 	} catch (...) {
-		LOGE("GameEngine::Init unknown exception");
-		Shutdown();
+		LOGE("Init: unknown exception");
+		if (arena_) { delete arena_; arena_ = nullptr; }
+		player_ = nullptr;
+		ready_ = false;
 		return false;
 	}
 }
@@ -113,6 +127,7 @@ void GameEngine::Shutdown() {
 	player_ = nullptr;
 	playerId_ = 0;
 	ready_ = false;
+	LOGI("Shutdown");
 }
 
 void GameEngine::SetControls(const CarControls& controls) {
@@ -136,11 +151,11 @@ void GameEngine::ResetToKickoff() {
 	if (!ready_ || !arena_ || !player_) return;
 
 	CarState cs = player_->GetState();
-	cs.pos = Vec(0.f, -4608.f, GameConst::CAR_SPAWN_REST_Z);
+	cs.pos = Vec(0.f, -2560.f, GameConst::CAR_SPAWN_REST_Z);
 	cs.rotMat = RotMat::GetIdentity();
 	cs.vel = Vec(0, 0, 0);
 	cs.angVel = Vec(0, 0, 0);
-	cs.boost = 33.f;
+	cs.boost = 100.f;
 	cs.isDemoed = false;
 	player_->SetState(cs);
 
@@ -160,7 +175,6 @@ void GameEngine::Update(float dtSeconds) {
 	player_->controls = pendingControls_;
 
 	timeAccum_ += dtSeconds;
-	// Cap spiral of death
 	if (timeAccum_ > 0.25f) timeAccum_ = 0.25f;
 
 	int steps = 0;
@@ -178,7 +192,6 @@ void GameEngine::RebuildCamera(RenderSnapshot& snap) {
 
 	Vec carPos(snap.carPos[0], snap.carPos[1], snap.carPos[2]);
 	Vec fwd(snap.carForward[0], snap.carForward[1], snap.carForward[2]);
-	Vec up(snap.carUp[0], snap.carUp[1], snap.carUp[2]);
 
 	float flen = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
 	if (flen > 1e-4f) {
@@ -192,7 +205,6 @@ void GameEngine::RebuildCamera(RenderSnapshot& snap) {
 		Vec toBall = ball - carPos;
 		float tlen = std::sqrt(toBall.x * toBall.x + toBall.y * toBall.y + toBall.z * toBall.z);
 		Vec dir = (tlen > 1.f) ? Vec(toBall.x / tlen, toBall.y / tlen, toBall.z / tlen) : fwd;
-		// Camera behind car along direction opposite to ball, looking at ball
 		Vec back = Vec(-dir.x, -dir.y, -dir.z);
 		snap.camPos[0] = carPos.x + back.x * camDist;
 		snap.camPos[1] = carPos.y + back.y * camDist;
@@ -201,7 +213,6 @@ void GameEngine::RebuildCamera(RenderSnapshot& snap) {
 		snap.camTarget[1] = ball.y;
 		snap.camTarget[2] = ball.z;
 	} else {
-		// Chase cam behind car
 		snap.camPos[0] = carPos.x - fwd.x * camDist;
 		snap.camPos[1] = carPos.y - fwd.y * camDist;
 		snap.camPos[2] = carPos.z + camHeight;
@@ -221,13 +232,6 @@ void GameEngine::FillSnapshot(RenderSnapshot& snap) {
 	BallState bs = arena_->ball->GetState();
 
 	snap.carPos[0] = cs.pos.x; snap.carPos[1] = cs.pos.y; snap.carPos[2] = cs.pos.z;
-	// RotMat is column-major; forward is typically +X in RL cars? In RocketSim, local +X is forward.
-	// Columns: 0=right? Check MathTypes — usually forward is X for cars in this codebase.
-	// From typical RocketSim: rotMat.forward is column 0 or a helper.
-	// Use rotMat as 3x3 column-major: col0, col1, col2
-	// In MathTypes RotMat, forward is often .forward member — check quickly via usage.
-	// Safer: extract from matrix columns used by Bullet.
-	// We'll use: forward = rotMat * (1,0,0), right = rotMat * (0,1,0), up = rotMat * (0,0,1)
 	const Vec& forward = cs.rotMat.forward;
 	const Vec& right   = cs.rotMat.right;
 	const Vec& up      = cs.rotMat.up;

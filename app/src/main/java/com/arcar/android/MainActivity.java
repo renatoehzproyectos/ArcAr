@@ -8,15 +8,17 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.opengl.GLSurfaceView;
 
-/**
- * Playable ArcAr client.
- * Native init runs off the UI thread so the window is never frozen on the system splash.
- */
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
 public class MainActivity extends Activity {
 
     private static final String TAG = "ArcArUI";
@@ -25,10 +27,14 @@ public class MainActivity extends Activity {
     private GameRenderer renderer;
     private InputMapper input;
     private TextView hudText;
+    private TextView consoleText;
+    private ScrollView consoleScroll;
     private final Handler ui = new Handler(Looper.getMainLooper());
+    private final StringBuilder consoleBuf = new StringBuilder();
 
     private volatile boolean engineReady = false;
     private volatile boolean controlsRunning = false;
+    private boolean consoleVisible = false;
 
     private boolean keyW, keyS, keyA, keyD, keyUp, keyDown, keyLeft, keyRight;
 
@@ -36,63 +42,93 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-
-        // Draw UI immediately — never block here with native work
         setContentView(R.layout.activity_main);
 
         hudText = findViewById(R.id.hud);
+        consoleText = findViewById(R.id.console_text);
+        consoleScroll = findViewById(R.id.console_scroll);
         hudText.setText("Loading ArcAr…");
+        log("UI up, starting native init on bg thread");
 
         glView = findViewById(R.id.gl_surface);
         glView.setEGLContextClientVersion(2);
-        // Start with a no-op renderer until engine is ready (avoids native calls too early)
         renderer = new GameRenderer();
         renderer.setEngineReady(false);
         glView.setRenderer(renderer);
         glView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
 
-        Button settingsBtn = findViewById(R.id.btn_settings);
-        Button resetBtn = findViewById(R.id.btn_reset);
-        Button camBtn = findViewById(R.id.btn_cam);
-
-        settingsBtn.setOnClickListener(v ->
+        findViewById(R.id.btn_settings).setOnClickListener(v ->
                 startActivity(new Intent(this, SettingsActivity.class)));
-        resetBtn.setOnClickListener(v -> {
+        findViewById(R.id.btn_reset).setOnClickListener(v -> {
             if (engineReady) NativeBridge.nativeReset();
         });
-        camBtn.setOnClickListener(v -> {
+        findViewById(R.id.btn_cam).setOnClickListener(v -> {
             if (engineReady) NativeBridge.nativeToggleBallCam();
         });
+        findViewById(R.id.btn_console).setOnClickListener(v -> toggleConsole());
 
         renderer.setHudListener((boost, speed, ballCam, ready) -> ui.post(() -> {
             if (!engineReady) return;
             String cam = ballCam ? "BALL CAM" : "CAR CAM";
-            hudText.setText(String.format(
+            hudText.setText(String.format(Locale.US,
                     "Boost %d  |  Speed %.0f uu/s  |  %s",
                     Math.round(boost), speed, cam));
         }));
 
         input = new InputMapper(this);
-
-        // Heavy native init OFF the main thread
         new Thread(this::initNativeEngine, "ArcAr-Init").start();
+    }
+
+    private void toggleConsole() {
+        consoleVisible = !consoleVisible;
+        consoleScroll.setVisibility(consoleVisible ? View.VISIBLE : View.GONE);
+        if (consoleVisible) {
+            consoleScroll.post(() -> consoleScroll.fullScroll(View.FOCUS_DOWN));
+        }
+    }
+
+    private void log(String msg) {
+        Log.i(TAG, msg);
+        String line = new SimpleDateFormat("HH:mm:ss", Locale.US).format(new Date())
+                + "  " + msg + "\n";
+        ui.post(() -> {
+            consoleBuf.append(line);
+            // keep last ~8KB
+            if (consoleBuf.length() > 8000) {
+                consoleBuf.delete(0, consoleBuf.length() - 6000);
+            }
+            if (consoleText != null) {
+                consoleText.setText(consoleBuf.toString());
+                if (consoleVisible) {
+                    consoleScroll.post(() -> consoleScroll.fullScroll(View.FOCUS_DOWN));
+                }
+            }
+        });
     }
 
     private void initNativeEngine() {
         try {
-            // Touch NativeBridge here so loadLibrary runs on this thread, not UI
-            String meshesDir = getFilesDir().getAbsolutePath() + "/collision_meshes";
-            Log.i(TAG, "nativeInit start, meshes=" + meshesDir);
+            log("NativeBridge loaded=" + NativeBridge.isLoaded()
+                    + (NativeBridge.isLoaded() ? "" : (" err=" + NativeBridge.getLoadError())));
+            if (!NativeBridge.isLoaded()) {
+                ui.post(() -> hudText.setText("ERROR: libarcar_jni.so missing"));
+                return;
+            }
 
+            String meshesDir = getFilesDir().getAbsolutePath() + "/collision_meshes";
+            log("nativeInit(meshes)…");
             boolean ok = NativeBridge.nativeInit(meshesDir);
+            log("nativeInit(meshes) → " + ok);
+
             if (!ok) {
-                Log.w(TAG, "Init with meshes failed, retry empty");
+                log("nativeInit(\"\") fallback…");
                 ok = NativeBridge.nativeInit("");
+                log("nativeInit(\"\") → " + ok);
             }
 
             if (!ok) {
-                ui.post(() -> hudText.setText("ERROR: native init failed. Check logcat tag ArcArNative"));
-                Log.e(TAG, "nativeInit failed both attempts");
+                ui.post(() -> hudText.setText("ERROR: native init failed — open Console"));
+                log("INIT FAILED");
                 return;
             }
 
@@ -102,13 +138,10 @@ public class MainActivity extends Activity {
                 hudText.setText("ArcAr ready — drive!");
                 startControlPump();
             });
-            Log.i(TAG, "nativeInit OK");
-        } catch (UnsatisfiedLinkError e) {
-            Log.e(TAG, "Failed to load native library", e);
-            ui.post(() -> hudText.setText("ERROR: native lib missing (" + e.getMessage() + ")"));
+            log("READY");
         } catch (Throwable t) {
-            Log.e(TAG, "native init crash", t);
-            ui.post(() -> hudText.setText("ERROR: " + t.getClass().getSimpleName() + ": " + t.getMessage()));
+            log("INIT CRASH: " + t);
+            ui.post(() -> hudText.setText("ERROR: " + t.getClass().getSimpleName()));
         }
     }
 
@@ -122,7 +155,6 @@ public class MainActivity extends Activity {
         @Override
         public void run() {
             if (!engineReady) return;
-
             float steer = 0, throttle = 0, pitch = 0, yaw = 0;
             if (keyA) steer -= 1;
             if (keyD) steer += 1;
@@ -142,15 +174,19 @@ public class MainActivity extends Activity {
                 if (c.ballCamPressed) NativeBridge.nativeToggleBallCam();
                 if (c.resetPressed) NativeBridge.nativeReset();
             } catch (Throwable t) {
-                Log.e(TAG, "controls error", t);
+                log("controls: " + t);
             }
-
             ui.postDelayed(this, 8);
         }
     };
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
+        // Backtick / F1 toggles console
+        if (keyCode == KeyEvent.KEYCODE_GRAVE || keyCode == KeyEvent.KEYCODE_F1) {
+            toggleConsole();
+            return true;
+        }
         updateKeyboardFlags(keyCode, true);
         if (input != null && input.onKeyDown(keyCode, event)) return true;
         return super.onKeyDown(keyCode, event);
@@ -203,9 +239,7 @@ public class MainActivity extends Activity {
         ui.removeCallbacks(controlPump);
         controlsRunning = false;
         engineReady = false;
-        try {
-            NativeBridge.nativeShutdown();
-        } catch (Throwable ignored) {}
+        try { NativeBridge.nativeShutdown(); } catch (Throwable ignored) {}
         super.onDestroy();
     }
 }

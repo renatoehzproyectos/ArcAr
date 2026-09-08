@@ -994,11 +994,12 @@ void Arena::_SetupArenaCollisionShapes() {
 
 	auto collisionMeshes = ArcAr::GetArenaCollisionShapes(gameMode);
 
+	// No mesh files: continue with floor/wall planes only (playable without assets)
 	if (collisionMeshes.empty()) {
-		AA_ERR_CLOSE(
-			"No arena meshes found for gamemode " << GAMEMODE_STRS[(int)gameMode] << ", " <<
-			"the mesh files should be in " << ArcAr::_collisionMeshesFolder
-		)
+		AA_WARN(
+			"No arena meshes for " << GAMEMODE_STRS[(int)gameMode]
+			<< " — using collision planes only (folder=" << ArcAr::_collisionMeshesFolder << ")"
+		);
 	}
 
 	for (size_t i = 0; i < collisionMeshes.size(); i++) {

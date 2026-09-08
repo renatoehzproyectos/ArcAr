@@ -84,7 +84,7 @@ bool GameEngine::Init(const std::string& meshesDir) {
 		{
 			CarState cs = player_->GetState();
 			cs.pos = Vec(0.f, -2560.f, GameConst::CAR_SPAWN_REST_Z);
-			cs.rotMat = RotMat::GetIdentity();
+			cs.rotMat = RotMat::LookAt(Vec(0.f, 1.f, 0.f), Vec(0.f, 0.f, 1.f)); // face +Y (field forward)
 			cs.vel = Vec(0, 0, 0);
 			cs.angVel = Vec(0, 0, 0);
 			cs.boost = 100.f;
@@ -157,7 +157,7 @@ void GameEngine::ResetToKickoff() {
 
 	CarState cs = player_->GetState();
 	cs.pos = Vec(0.f, -2560.f, GameConst::CAR_SPAWN_REST_Z);
-	cs.rotMat = RotMat::GetIdentity();
+	cs.rotMat = RotMat::LookAt(Vec(0.f, 1.f, 0.f), Vec(0.f, 0.f, 1.f)); // face +Y (field forward)
 	cs.vel = Vec(0, 0, 0);
 	cs.angVel = Vec(0, 0, 0);
 	cs.boost = 100.f;

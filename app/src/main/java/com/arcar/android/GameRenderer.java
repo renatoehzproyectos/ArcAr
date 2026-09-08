@@ -167,8 +167,16 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         drawBox(0, 0, 1f, 4096, 20f, 2f, 0.9f, 0.9f, 0.9f, 1f);
 
         // Car (oriented box ~ hitbox size body C ~ 118 x 84 x 36)
+        // extents: right=width, forward=length, up=height (BODY_C-ish)
         drawOrientedBox(cx, cy, cz, fx, fy, fz, ux, uy, uz, rx, ry, rz,
-                118f, 84f, 36f, 0.2f, 0.55f, 1f, 1f);
+                87.17f, 131.32f, 31.89f, 0.2f, 0.55f, 1f, 1f);
+
+        // Nose marker (orange) so front is obvious — offset along forward
+        float noseX = cx + fx * 70f;
+        float noseY = cy + fy * 70f;
+        float noseZ = cz + fz * 70f;
+        drawOrientedBox(noseX, noseY, noseZ, fx, fy, fz, ux, uy, uz, rx, ry, rz,
+                40f, 25f, 20f, 1f, 0.55f, 0.1f, 1f);
 
         // Ball
         drawSphere(bx, by, bz, br, 1f, 0.85f, 0.2f, 1f);

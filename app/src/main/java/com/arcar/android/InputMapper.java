@@ -248,10 +248,11 @@ public class InputMapper {
         if (event.getAction() != MotionEvent.ACTION_MOVE) return false;
 
         // Analogue only — like Rocket League
-        axisSteer = deadzone(event.getAxisValue(MotionEvent.AXIS_X));
-        axisPitch = deadzone(-event.getAxisValue(MotionEvent.AXIS_Y));
-        axisYaw = deadzone(event.getAxisValue(MotionEvent.AXIS_Z));
-        float rx = deadzone(event.getAxisValue(MotionEvent.AXIS_RX));
+        // Match physical stick directions (Android Y is often up=-1, so leave as-is for pitch-up)
+        axisSteer = deadzone(-event.getAxisValue(MotionEvent.AXIS_X)); // left = steer left
+        axisPitch = deadzone(event.getAxisValue(MotionEvent.AXIS_Y));  // stick up = pitch up
+        axisYaw = deadzone(-event.getAxisValue(MotionEvent.AXIS_Z));
+        float rx = deadzone(-event.getAxisValue(MotionEvent.AXIS_RX));
         if (Math.abs(rx) > Math.abs(axisYaw)) axisYaw = rx;
         // Right stick Y unused for pitch (RL uses left stick for pitch)
 

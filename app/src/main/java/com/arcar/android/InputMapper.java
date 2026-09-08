@@ -272,9 +272,12 @@ public class InputMapper {
         if (held[Action.DECELERATE.ordinal()]) th = Math.min(th, -1f);
         st.throttle = clamp(th, -1f, 1f);
 
+        // Rocket League: left stick X = steer on ground AND yaw in air
         st.steer = clamp(axisSteer, -1f, 1f);
         st.pitch = clamp(axisPitch, -1f, 1f);
-        st.yaw = clamp(axisYaw, -1f, 1f);
+        // Yaw: left stick X (primary) + right stick (optional add)
+        float yaw = axisSteer + axisYaw;
+        st.yaw = clamp(yaw, -1f, 1f);
 
         float roll = 0f;
         if (held[Action.AIR_ROLL_LEFT.ordinal()]) roll -= 1f;

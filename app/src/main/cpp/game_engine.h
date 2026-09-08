@@ -34,11 +34,18 @@ struct RenderSnapshot {
 	float camPos[3];
 	float camTarget[3];
 	bool  ballCam;
+	float camFov;
+	float camShake;
+
+	// Ball impact (for VFX)
+	float ballSpeed;
+	float impactImpulse; // rise when ball accelerates hard
 
 	// HUD
 	float speedUU;
 	uint64_t tick;
 	bool  ready;
+	bool  goalScored; // ball crossed goal line this snapshot (sticky ~0.5s handled in render)
 };
 
 class GameEngine {
@@ -84,7 +91,16 @@ private:
 	bool infiniteBoost_ = false;
 
 	float timeAccum_ = 0.f;
-	static constexpr float kFixedDt = 1.f / 120.f; // match default arena tick
+	static constexpr float kFixedDt = 1.f / 120.f;
+
+	// Smoothed camera state
+	float camPosSmooth_[3] = {0, -3000, 200};
+	float camTgtSmooth_[3] = {0, 0, 100};
+	float camFov_ = 70.f;
+	float camShake_ = 0.f;
+	float prevBallSpeed_ = 0.f;
 };
+
+
 
 } // namespace ArcAr

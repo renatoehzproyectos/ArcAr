@@ -44,10 +44,15 @@ public class MainActivity extends Activity {
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
 
-        hudText = findViewById(R.id.hud);
+        hudText = findViewById(R.id.hud_speed);
+        hudCam = findViewById(R.id.hud_cam);
+        boostFill = findViewById(R.id.boost_fill);
+        hudGoal = findViewById(R.id.hud_goal);
         consoleText = findViewById(R.id.console_text);
         consoleScroll = findViewById(R.id.console_scroll);
-        hudText.setText("Loading ArcAr…");
+        if (hudText != null) hudText.setText("Loading…");
+        if (findViewById(R.id.hud_title) != null)
+            ((TextView)findViewById(R.id.hud_title)).setText("ARCAR");
         log("UI up, starting native init on bg thread");
 
         glView = findViewById(R.id.gl_surface);
@@ -67,12 +72,33 @@ public class MainActivity extends Activity {
         });
         findViewById(R.id.btn_console).setOnClickListener(v -> toggleConsole());
 
-        renderer.setHudListener((boost, speed, ballCam, ready) -> ui.post(() -> {
+        renderer.setHudListener((boost, speed, ballCam, ready, boosting, goal) -> ui.post(() -> {
             if (!engineReady) return;
-            String cam = ballCam ? "BALL CAM" : "CAR CAM";
-            hudText.setText(String.format(Locale.US,
-                    "Boost %d  |  Speed %.0f uu/s  |  %s",
-                    Math.round(boost), speed, cam));
+            if (hudText != null)
+                hudText.setText(String.format(Locale.US, "%.0f uu/s%s", speed, boosting ? "  ·  BOOST" : ""));
+            if (hudCam != null) {
+                hudCam.setText(ballCam ? "BALL CAM" : "CAR CAM");
+            }
+            if (boostFill != null && boostFill.getParent() instanceof android.view.View) {
+                android.view.View parent = (android.view.View) boostFill.getParent();
+                int w = parent.getWidth();
+                if (w > 0) {
+                    android.view.ViewGroup.LayoutParams lp = boostFill.getLayoutParams();
+                    lp.width = Math.max(1, (int)(w * Math.min(1f, boost / 100f)));
+                    boostFill.setLayoutParams(lp);
+                }
+                int color = boost < 10 ? 0xFFFF4444 : (boosting ? 0xFFFFDD55 : 0xFFFFA020);
+                boostFill.setBackgroundColor(color);
+            }
+            if (hudGoal != null) {
+                if (goal) {
+                    hudGoal.setVisibility(android.view.View.VISIBLE);
+                    hudGoal.setText("GOAL!");
+                } else if (hudGoal.getVisibility() == android.view.View.VISIBLE) {
+                    // keep briefly — renderer drives flash; hide when not scoring
+                    hudGoal.postDelayed(() -> hudGoal.setVisibility(android.view.View.GONE), 1200);
+                }
+            }
         }));
 
         input = new InputMapper(this);

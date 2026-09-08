@@ -73,10 +73,10 @@ JNIEXPORT jboolean JNICALL
 Java_com_arcar_android_NativeBridge_nativeGetSnapshotImpl(JNIEnv* env, jclass, jfloatArray outArr) {
 	if (!outArr) return JNI_FALSE;
 	const jsize len = env->GetArrayLength(outArr);
-	if (len < 30) return JNI_FALSE;
+	if (len < 40) return JNI_FALSE;
 
 	RenderSnapshot s = GameEngine::Instance().GetSnapshot();
-	jfloat buf[30];
+	jfloat buf[40];
 	buf[0] = s.carPos[0]; buf[1] = s.carPos[1]; buf[2] = s.carPos[2];
 	buf[3] = s.carForward[0]; buf[4] = s.carForward[1]; buf[5] = s.carForward[2];
 	buf[6] = s.carUp[0]; buf[7] = s.carUp[1]; buf[8] = s.carUp[2];
@@ -93,8 +93,15 @@ Java_com_arcar_android_NativeBridge_nativeGetSnapshotImpl(JNIEnv* env, jclass, j
 	buf[27] = s.isSupersonic ? 1.f : 0.f;
 	buf[28] = (float)(s.tick % 1000000ULL);
 	buf[29] = s.ready ? 1.f : 0.f;
+	buf[30] = s.camFov;
+	buf[31] = s.camShake;
+	buf[32] = s.ballSpeed;
+	buf[33] = s.impactImpulse;
+	buf[34] = s.goalScored ? 1.f : 0.f;
+	buf[35] = s.carVel[0]; buf[36] = s.carVel[1]; buf[37] = s.carVel[2];
+	buf[38] = s.ballVel[0]; buf[39] = s.ballVel[1];
 
-	env->SetFloatArrayRegion(outArr, 0, 30, buf);
+	env->SetFloatArrayRegion(outArr, 0, 40, buf);
 	return s.ready ? JNI_TRUE : JNI_FALSE;
 }
 

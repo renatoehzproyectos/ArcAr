@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <cstdlib>
 
 #define LOG_TAG "ArcArNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -199,41 +200,94 @@ void GameEngine::Update(float dtSeconds) {
 }
 
 void GameEngine::RebuildCamera(RenderSnapshot& snap) {
-	const float camDist = 280.f;
-	const float camHeight = 110.f;
-	const float lookAhead = 60.f;
-
 	Vec carPos(snap.carPos[0], snap.carPos[1], snap.carPos[2]);
 	Vec fwd(snap.carForward[0], snap.carForward[1], snap.carForward[2]);
+	Vec vel(snap.carVel[0], snap.carVel[1], snap.carVel[2]);
 
 	float flen = std::sqrt(fwd.x * fwd.x + fwd.y * fwd.y + fwd.z * fwd.z);
-	if (flen > 1e-4f) {
-		fwd.x /= flen; fwd.y /= flen; fwd.z /= flen;
-	} else {
-		fwd = Vec(0, 1, 0);
-	}
+	if (flen > 1e-4f) { fwd.x /= flen; fwd.y /= flen; fwd.z /= flen; }
+	else { fwd = Vec(0, 1, 0); }
+
+	float speed = snap.speedUU;
+	float speed01 = std::min(speed / 2300.f, 1.f);
+
+	// Dynamic distance / height / look-ahead from speed + boost
+	float camDist = 300.f + speed01 * 90.f + (snap.isBoosting ? 40.f : 0.f);
+	float camHeight = 120.f + speed01 * 40.f + (snap.onGround ? 0.f : 30.f);
+	float lookAhead = 80.f + speed01 * 120.f;
+
+	float desiredPos[3], desiredTgt[3];
 
 	if (ballCam_) {
 		Vec ball(snap.ballPos[0], snap.ballPos[1], snap.ballPos[2]);
 		Vec toBall = ball - carPos;
 		float tlen = std::sqrt(toBall.x * toBall.x + toBall.y * toBall.y + toBall.z * toBall.z);
-		Vec dir = (tlen > 1.f) ? Vec(toBall.x / tlen, toBall.y / tlen, toBall.z / tlen) : fwd;
-		Vec back = Vec(-dir.x, -dir.y, -dir.z);
-		snap.camPos[0] = carPos.x + back.x * camDist;
-		snap.camPos[1] = carPos.y + back.y * camDist;
-		snap.camPos[2] = carPos.z + camHeight;
-		snap.camTarget[0] = ball.x;
-		snap.camTarget[1] = ball.y;
-		snap.camTarget[2] = ball.z;
+		Vec dir = (tlen > 50.f) ? Vec(toBall.x / tlen, toBall.y / tlen, toBall.z / tlen) : fwd;
+		// Blend look direction with velocity for prediction
+		float vlen = std::sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
+		if (vlen > 100.f) {
+			Vec vn(vel.x/vlen, vel.y/vlen, vel.z/vlen);
+			dir.x = dir.x * 0.7f + vn.x * 0.3f;
+			dir.y = dir.y * 0.7f + vn.y * 0.3f;
+			dir.z = dir.z * 0.7f + vn.z * 0.3f;
+			float dl = std::sqrt(dir.x*dir.x+dir.y*dir.y+dir.z*dir.z);
+			if (dl > 1e-4f) { dir.x/=dl; dir.y/=dl; dir.z/=dl; }
+		}
+		float dist = std::min(std::max(tlen * 0.35f, 220.f), 520.f);
+		desiredPos[0] = carPos.x - dir.x * dist;
+		desiredPos[1] = carPos.y - dir.y * dist;
+		desiredPos[2] = carPos.z + camHeight + std::min(tlen * 0.05f, 80.f);
+		// Look between car and ball, weighted toward ball
+		desiredTgt[0] = carPos.x * 0.25f + ball.x * 0.75f;
+		desiredTgt[1] = carPos.y * 0.25f + ball.y * 0.75f;
+		desiredTgt[2] = carPos.z * 0.25f + ball.z * 0.75f + 30.f;
 	} else {
-		snap.camPos[0] = carPos.x - fwd.x * camDist;
-		snap.camPos[1] = carPos.y - fwd.y * camDist;
-		snap.camPos[2] = carPos.z + camHeight;
-		snap.camTarget[0] = carPos.x + fwd.x * lookAhead;
-		snap.camTarget[1] = carPos.y + fwd.y * lookAhead;
-		snap.camTarget[2] = carPos.z + 20.f;
+		// Chase cam with velocity look-ahead
+		Vec look = fwd;
+		float vlen = std::sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
+		if (vlen > 50.f) {
+			look.x = fwd.x * 0.55f + (vel.x/vlen) * 0.45f;
+			look.y = fwd.y * 0.55f + (vel.y/vlen) * 0.45f;
+			look.z = fwd.z * 0.55f + (vel.z/vlen) * 0.45f;
+			float ll = std::sqrt(look.x*look.x+look.y*look.y+look.z*look.z);
+			if (ll > 1e-4f) { look.x/=ll; look.y/=ll; look.z/=ll; }
+		}
+		desiredPos[0] = carPos.x - look.x * camDist;
+		desiredPos[1] = carPos.y - look.y * camDist;
+		desiredPos[2] = carPos.z + camHeight;
+		desiredTgt[0] = carPos.x + look.x * lookAhead;
+		desiredTgt[1] = carPos.y + look.y * lookAhead;
+		desiredTgt[2] = carPos.z + look.z * 20.f + 25.f;
 	}
+
+	// Smooth follow (exponential)
+	const float follow = 0.12f;
+	for (int i = 0; i < 3; i++) {
+		camPosSmooth_[i] += (desiredPos[i] - camPosSmooth_[i]) * follow;
+		camTgtSmooth_[i] += (desiredTgt[i] - camTgtSmooth_[i]) * follow;
+	}
+
+	// FOV: base 68, up to ~85 when boosting / high speed
+	float wantFov = 68.f + speed01 * 10.f + (snap.isBoosting ? 8.f : 0.f);
+	camFov_ += (wantFov - camFov_) * 0.08f;
+
+	// Shake decay + add from hard ball hits (handled in FillSnapshot)
+	camShake_ *= 0.90f;
+	if (camShake_ < 0.05f) camShake_ = 0.f;
+
+	float sx = camShake_ * ((float)(rand() % 1000) / 1000.f - 0.5f) * 12.f;
+	float sy = camShake_ * ((float)(rand() % 1000) / 1000.f - 0.5f) * 12.f;
+	float sz = camShake_ * ((float)(rand() % 1000) / 1000.f - 0.5f) * 6.f;
+
+	snap.camPos[0] = camPosSmooth_[0] + sx;
+	snap.camPos[1] = camPosSmooth_[1] + sy;
+	snap.camPos[2] = camPosSmooth_[2] + sz;
+	snap.camTarget[0] = camTgtSmooth_[0];
+	snap.camTarget[1] = camTgtSmooth_[1];
+	snap.camTarget[2] = camTgtSmooth_[2];
 	snap.ballCam = ballCam_;
+	snap.camFov = camFov_;
+	snap.camShake = camShake_;
 }
 
 void GameEngine::FillSnapshot(RenderSnapshot& snap) {
@@ -266,6 +320,16 @@ void GameEngine::FillSnapshot(RenderSnapshot& snap) {
 	float sp = std::sqrt(cs.vel.x * cs.vel.x + cs.vel.y * cs.vel.y + cs.vel.z * cs.vel.z);
 	snap.speedUU = sp;
 	snap.tick = arena_->tickCount;
+
+	float bsp = std::sqrt(bs.vel.x*bs.vel.x + bs.vel.y*bs.vel.y + bs.vel.z*bs.vel.z);
+	snap.ballSpeed = bsp;
+	float dBall = bsp - prevBallSpeed_;
+	prevBallSpeed_ = bsp;
+	snap.impactImpulse = (dBall > 200.f) ? dBall : 0.f;
+	if (dBall > 400.f) camShake_ = std::min(camShake_ + dBall / 800.f, 3.f);
+
+	// Goal line ~ ±5120 Y
+	snap.goalScored = (std::abs(bs.pos.y) > 5124.f && bs.pos.z < 650.f && std::abs(bs.pos.x) < 900.f);
 
 	RebuildCamera(snap);
 }

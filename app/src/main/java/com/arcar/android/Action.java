@@ -1,17 +1,21 @@
 package com.arcar.android;
 
-/** Logical actions the player can bind to controller buttons / axes. */
+/**
+ * Simulation-only actions (drive the car).
+ * Camera / Settings / Console / Reset are UI-only and not bindable here.
+ */
 public enum Action {
     ACCELERATE,
-    REVERSE,
-    STEER,          // axis
-    PITCH,          // axis (left stick Y)
-    YAW,            // axis (right stick X)
+    DECELERATE,     // reverse / brake
+    STEER_LEFT,
+    STEER_RIGHT,
+    PITCH_UP,
+    PITCH_DOWN,
+    YAW_LEFT,
+    YAW_RIGHT,
     AIR_ROLL_LEFT,
     AIR_ROLL_RIGHT,
     JUMP,
     BOOST,
-    POWERSLIDE,
-    BALL_CAM,
-    RESET
+    POWERSLIDE
 }

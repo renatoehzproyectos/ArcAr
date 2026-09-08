@@ -36,7 +36,7 @@ public class MainActivity extends Activity {
     private volatile boolean controlsRunning = false;
     private boolean consoleVisible = false;
 
-    private boolean keyW, keyS, keyA, keyD, keyUp, keyDown, keyLeft, keyRight;
+    // Keyboard/gamepad → InputMapper only (simulation binds)
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -155,24 +155,12 @@ public class MainActivity extends Activity {
         @Override
         public void run() {
             if (!engineReady) return;
-            float steer = 0, throttle = 0, pitch = 0, yaw = 0;
-            if (keyA) steer -= 1;
-            if (keyD) steer += 1;
-            if (keyW) throttle += 1;
-            if (keyS) throttle -= 1;
-            if (keyUp) pitch += 1;
-            if (keyDown) pitch -= 1;
-            if (keyLeft) yaw -= 1;
-            if (keyRight) yaw += 1;
-            input.setKeyboardAxes(steer, throttle, pitch, yaw);
-
+            // Simulation only — camera / reset / console are UI buttons, not binds
             InputMapper.ControlsState c = input.poll();
             try {
                 NativeBridge.nativeSetControls(
                         c.throttle, c.steer, c.pitch, c.yaw, c.roll,
                         c.jump, c.boost, c.handbrake);
-                if (c.ballCamPressed) NativeBridge.nativeToggleBallCam();
-                if (c.resetPressed) NativeBridge.nativeReset();
             } catch (Throwable t) {
                 log("controls: " + t);
             }
@@ -182,34 +170,19 @@ public class MainActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        // Backtick / F1 toggles console
+        // UI-only shortcuts (not simulation binds)
         if (keyCode == KeyEvent.KEYCODE_GRAVE || keyCode == KeyEvent.KEYCODE_F1) {
             toggleConsole();
             return true;
         }
-        updateKeyboardFlags(keyCode, true);
         if (input != null && input.onKeyDown(keyCode, event)) return true;
         return super.onKeyDown(keyCode, event);
     }
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        updateKeyboardFlags(keyCode, false);
         if (input != null && input.onKeyUp(keyCode, event)) return true;
         return super.onKeyUp(keyCode, event);
-    }
-
-    private void updateKeyboardFlags(int keyCode, boolean down) {
-        switch (keyCode) {
-            case KeyEvent.KEYCODE_W: keyW = down; break;
-            case KeyEvent.KEYCODE_S: keyS = down; break;
-            case KeyEvent.KEYCODE_A: keyA = down; break;
-            case KeyEvent.KEYCODE_D: keyD = down; break;
-            case KeyEvent.KEYCODE_DPAD_UP: keyUp = down; break;
-            case KeyEvent.KEYCODE_DPAD_DOWN: keyDown = down; break;
-            case KeyEvent.KEYCODE_DPAD_LEFT: keyLeft = down; break;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: keyRight = down; break;
-        }
     }
 
     @Override

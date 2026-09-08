@@ -40,6 +40,38 @@ public class SettingsActivity extends Activity {
         status = findViewById(R.id.status);
         LinearLayout list = findViewById(R.id.bind_list);
 
+        // Car selector
+        TextView carTitle = new TextView(this);
+        carTitle.setText("CAR BODY");
+        carTitle.setTextColor(0xFFFFCC66);
+        carTitle.setTextSize(14);
+        list.addView(carTitle);
+        LinearLayout carRow = new LinearLayout(this);
+        carRow.setOrientation(LinearLayout.HORIZONTAL);
+        final String selected = CarCatalog.getSelectedId(this);
+        for (final CarCatalog.Entry e : CarCatalog.CARS) {
+            Button b = new Button(this);
+            b.setText(e.displayName);
+            if (e.id.equals(selected)) b.setTextColor(0xFFFFCC66);
+            b.setOnClickListener(v -> {
+                CarCatalog.setSelectedId(this, e.id);
+                status.setText("Car: " + e.displayName + " (applies next launch)");
+                // update button colors
+                for (int i = 0; i < carRow.getChildCount(); i++) {
+                    Button bb = (Button) carRow.getChildAt(i);
+                    bb.setTextColor(0xFFFFFFFF);
+                }
+                b.setTextColor(0xFFFFCC66);
+            });
+            carRow.addView(b);
+        }
+        list.addView(carRow);
+        TextView carNote = new TextView(this);
+        carNote.setText("Models: CC-BY (Sketchfab). Restart match after switching.\n");
+        carNote.setTextColor(0xFF888888);
+        carNote.setTextSize(12);
+        list.addView(carNote);
+
         // Infinite boost toggle at top
         CheckBox infBoost = new CheckBox(this);
         infBoost.setText("Infinite boost");

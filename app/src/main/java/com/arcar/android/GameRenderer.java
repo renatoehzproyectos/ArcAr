@@ -1,5 +1,6 @@
 package com.arcar.android;
 
+import android.content.Context;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
@@ -41,6 +42,15 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private volatile boolean engineReady;
     private final Random rng = new Random(42);
 
+    private Context appCtx;
+    private final AssetStore assets = new AssetStore();
+    private int meshProgram;
+    private int mAPos, mANrm, mAUv, mUMVP, mUModel, mUColor, mULight, mUAmbient, mUEmissive, mUTex, mUUseTex;
+    private int spriteProgram;
+    private int sAPos, sAUv, sUMVP, sUColor, sUTex;
+    private FloatBuffer quadPN; // pos3+uv2 for billboards
+    private String pendingCarId = "octane";
+
     // Trail / particles (pooled)
     private static final int TRAIL = 64;
     private final float[] tX = new float[TRAIL], tY = new float[TRAIL], tZ = new float[TRAIL];
@@ -66,6 +76,13 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
     public void setEngineReady(boolean ready) { engineReady = ready; }
 
+    public void setContext(Context ctx) {
+        appCtx = ctx.getApplicationContext();
+        pendingCarId = CarCatalog.getSelectedId(appCtx);
+    }
+
+    public void setCarId(String id) { pendingCarId = id; }
+
     public interface HudListener {
         void onHud(float boost, float speed, boolean ballCam, boolean ready, boolean boosting, boolean goal);
     }
@@ -84,6 +101,8 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);
         GLES20.glEnable(GLES20.GL_CULL_FACE);
         GLES20.glEnable(GLES20.GL_BLEND);
+        // allow 32-bit indices for larger meshes
+        // (device almost always supports OES_element_index_uint)
         GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
 
         String vs =
@@ -123,6 +142,79 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
         cubePN = buildCubePN();
         spherePN = buildSpherePN(16, 24);
+        quadPN = buildQuad();
+
+        // Textured mesh shader
+        String mvs =
+            "uniform mat4 uMVP;\n" +
+            "uniform mat4 uModel;\n" +
+            "attribute vec3 aPos;\n" +
+            "attribute vec3 aNrm;\n" +
+            "attribute vec2 aUv;\n" +
+            "varying vec3 vN;\n" +
+            "varying vec2 vUv;\n" +
+            "void main(){\n" +
+            "  vN = mat3(uModel) * aNrm;\n" +
+            "  vUv = aUv;\n" +
+            "  gl_Position = uMVP * vec4(aPos,1.0);\n" +
+            "}\n";
+        String mfs =
+            "precision mediump float;\n" +
+            "varying vec3 vN;\n" +
+            "varying vec2 vUv;\n" +
+            "uniform vec4 uColor;\n" +
+            "uniform vec3 uLightDir;\n" +
+            "uniform float uAmbient;\n" +
+            "uniform float uEmissive;\n" +
+            "uniform sampler2D uTex;\n" +
+            "uniform float uUseTex;\n" +
+            "void main(){\n" +
+            "  vec3 n = normalize(vN);\n" +
+            "  float ndl = max(dot(n, normalize(uLightDir)), 0.0);\n" +
+            "  float light = uAmbient + (1.0 - uAmbient) * ndl;\n" +
+            "  vec4 texC = (uUseTex > 0.5) ? texture2D(uTex, vUv) : vec4(1.0);\n" +
+            "  vec3 col = uColor.rgb * texC.rgb * light + uColor.rgb * uEmissive;\n" +
+            "  gl_FragColor = vec4(col, uColor.a * texC.a);\n" +
+            "}\n";
+        meshProgram = link(mvs, mfs);
+        mAPos = GLES20.glGetAttribLocation(meshProgram, "aPos");
+        mANrm = GLES20.glGetAttribLocation(meshProgram, "aNrm");
+        mAUv = GLES20.glGetAttribLocation(meshProgram, "aUv");
+        mUMVP = GLES20.glGetUniformLocation(meshProgram, "uMVP");
+        mUModel = GLES20.glGetUniformLocation(meshProgram, "uModel");
+        mUColor = GLES20.glGetUniformLocation(meshProgram, "uColor");
+        mULight = GLES20.glGetUniformLocation(meshProgram, "uLightDir");
+        mUAmbient = GLES20.glGetUniformLocation(meshProgram, "uAmbient");
+        mUEmissive = GLES20.glGetUniformLocation(meshProgram, "uEmissive");
+        mUTex = GLES20.glGetUniformLocation(meshProgram, "uTex");
+        mUUseTex = GLES20.glGetUniformLocation(meshProgram, "uUseTex");
+
+        // Sprite/billboard shader
+        String svs =
+            "uniform mat4 uMVP;\n" +
+            "attribute vec3 aPos;\n" +
+            "attribute vec2 aUv;\n" +
+            "varying vec2 vUv;\n" +
+            "void main(){ vUv=aUv; gl_Position=uMVP*vec4(aPos,1.0); }\n";
+        String sfs =
+            "precision mediump float;\n" +
+            "varying vec2 vUv;\n" +
+            "uniform vec4 uColor;\n" +
+            "uniform sampler2D uTex;\n" +
+            "void main(){\n" +
+            "  vec4 t = texture2D(uTex, vUv);\n" +
+            "  gl_FragColor = vec4(t.rgb * uColor.rgb, t.a * uColor.a);\n" +
+            "}\n";
+        spriteProgram = link(svs, sfs);
+        sAPos = GLES20.glGetAttribLocation(spriteProgram, "aPos");
+        sAUv = GLES20.glGetAttribLocation(spriteProgram, "aUv");
+        sUMVP = GLES20.glGetUniformLocation(spriteProgram, "uMVP");
+        sUColor = GLES20.glGetUniformLocation(spriteProgram, "uColor");
+        sUTex = GLES20.glGetUniformLocation(spriteProgram, "uTex");
+
+        if (appCtx != null) {
+            assets.loadAll(appCtx, pendingCarId);
+        }
     }
 
     @Override
@@ -212,6 +304,14 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
         // Clear — stadium night sky + goal flash
         float flash = goalFlash * 0.35f + impactFlash * 0.15f;
+        if (appCtx != null) {
+            String want = CarCatalog.getSelectedId(appCtx);
+            if (assets.car == null || !want.equals(pendingCarId)) {
+                pendingCarId = want;
+                assets.loadAll(appCtx, want);
+            }
+        }
+
         GLES20.glClearColor(0.07f+flash, 0.08f+flash*0.5f, 0.12f+flash*0.2f, 1f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         GLES20.glUseProgram(program);
@@ -313,6 +413,24 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private void drawCar(float x,float y,float z, float fx,float fy,float fz,
                          float ux,float uy,float uz, float rx,float ry,float rz,
                          boolean boosting, boolean isSuper, boolean onGround, float speed) {
+        if (assets.car != null && !assets.car.primitives.isEmpty()) {
+            drawGlb(assets.car, x, y, z, fx, fy, fz, ux, uy, uz, rx, ry, rz,
+                    isSuper ? 1.15f : 1f, isSuper ? 0.25f : 0.05f);
+            // Boost exhaust still using particles/sprites
+            float ex=x-fx*55, ey=y-fy*55, ez=z-fz*55;
+            if (boosting) {
+                float flick = 0.7f + 0.3f*(float)Math.sin(System.nanoTime()*1.2e-7);
+                int flame = assets.tex("textures/particles/flame_03.png");
+                if (flame != 0) {
+                    drawBillboard(ex, ey, ez, 70f*flick, flame, 1f, 0.7f, 0.3f, 0.95f);
+                    drawBillboard(ex-fx*35, ey-fy*35, ez-fz*35, 45f*flick,
+                            assets.tex("textures/particles/flame_05.png"), 1f, 0.9f, 0.5f, 0.8f);
+                } else {
+                    ori(ex,ey,ez, fx,fy,fz,ux,uy,uz,rx,ry,rz, 22, 55*flick, 18, 1f,0.45f,0.05f,0.95f,0.5f,0.95f);
+                }
+            }
+            return;
+        }
         float br=isSuper?0.4f:0.18f, bg=isSuper?0.6f:0.48f, bb=isSuper?1f:0.95f;
         // Lower chassis
         ori(x,y,z, fx,fy,fz,ux,uy,uz,rx,ry,rz, 86,118,18, br*0.7f,bg*0.7f,bb*0.7f,1f,0.4f,0.05f);
@@ -357,8 +475,18 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     }
 
     private void drawBall(float x,float y,float z,float r, float speed) {
+        if (assets.ball != null && !assets.ball.primitives.isEmpty()) {
+            // Ball model is unit-ish; scale so radius matches physics
+            float s = (r * 2f) / Math.max(1f, assets.ball.radius * 2f);
+            drawGlbUniformScale(assets.ball, x, y, z, s, 1f, 1f, 1f, 0.08f);
+            if (speed > 1500f) {
+                float a = Math.min((speed-1500f)/3000f, 0.45f);
+                int glow = assets.tex("textures/particles/flare_01.png");
+                if (glow != 0) drawBillboard(x, y, z, r * 2.2f, glow, 1f, 0.9f, 0.4f, a);
+            }
+            return;
+        }
         litSphere(x,y,z,r, 0.92f,0.85f,0.15f,1f,0.5f,0.12f);
-        // Pattern rings
         litSphere(x,y,z,r*1.01f, 0.12f,0.12f,0.12f,0.4f,0.4f,0.05f);
         if (speed > 1500f) {
             float a = Math.min((speed-1500f)/3000f, 0.5f);
@@ -385,11 +513,20 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     }
 
     private void drawBoostTrail() {
+        int flame = assets.tex("textures/particles/flame_01.png");
+        int smoke = assets.tex("textures/smoke/blackSmoke00.png");
         for (int i=0;i<TRAIL;i++) {
             if (tLife[i] <= 0.01f) continue;
             float life=tLife[i];
-            float s=12f+40f*life;
-            litBox(tX[i],tY[i],tZ[i], s,s,s*0.7f, 1f,0.5f+0.4f*life,0.1f, life*0.7f, 0.5f, life);
+            float s=20f+55f*life;
+            if (flame != 0) {
+                drawBillboard(tX[i], tY[i], tZ[i], s, flame, 1f, 0.55f + 0.4f*life, 0.15f, life*0.85f);
+            } else {
+                litBox(tX[i],tY[i],tZ[i], s,s,s*0.7f, 1f,0.5f+0.4f*life,0.1f, life*0.7f, 0.5f, life);
+            }
+            if (life < 0.45f && smoke != 0) {
+                drawBillboard(tX[i], tY[i], tZ[i]+8f, s*1.2f, smoke, 0.6f, 0.6f, 0.6f, life*0.35f);
+            }
         }
     }
 
@@ -563,4 +700,136 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private static int compile(int type, String src) {
         int s=GLES20.glCreateShader(type); GLES20.glShaderSource(s,src); GLES20.glCompileShader(s); return s;
     }
+    private void drawGlb(GlbModel glb, float x, float y, float z,
+                         float fx, float fy, float fz,
+                         float ux, float uy, float uz,
+                         float rx, float ry, float rz,
+                         float colorScale, float emissive) {
+        Matrix.setIdentityM(model, 0);
+        // local +X -> forward, +Y -> right, +Z -> up
+        model[0] = fx; model[1] = fy; model[2] = fz;
+        model[4] = rx; model[5] = ry; model[6] = rz;
+        model[8] = ux; model[9] = uy; model[10] = uz;
+        model[12] = x; model[13] = y; model[14] = z;
+        float[] rot = new float[16];
+        Matrix.setRotateM(rot, 0, 90f, 0f, 0f, 1f);
+        float[] oriented = new float[16];
+        Matrix.multiplyMM(oriented, 0, model, 0, rot, 0);
+        System.arraycopy(oriented, 0, model, 0, 16);
+
+        GLES20.glUseProgram(meshProgram);
+        GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);
+        for (GlbModel.Primitive prim : glb.primitives) {
+            Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
+            Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
+            GLES20.glUniformMatrix4fv(mUMVP, 1, false, mvp, 0);
+            GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
+            GLES20.glUniform4f(mUColor, prim.baseColor[0]*colorScale, prim.baseColor[1]*colorScale,
+                    prim.baseColor[2]*colorScale, prim.baseColor[3]);
+            GLES20.glUniform1f(mUAmbient, 0.4f);
+            GLES20.glUniform1f(mUEmissive, emissive);
+            boolean useTex = prim.textureId > 0;
+            GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
+            if (useTex) {
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, prim.textureId);
+                GLES20.glUniform1i(mUTex, 0);
+            }
+            prim.interleaved.position(0);
+            GLES20.glEnableVertexAttribArray(mAPos);
+            GLES20.glVertexAttribPointer(mAPos, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(3);
+            GLES20.glEnableVertexAttribArray(mANrm);
+            GLES20.glVertexAttribPointer(mANrm, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(6);
+            GLES20.glEnableVertexAttribArray(mAUv);
+            GLES20.glVertexAttribPointer(mAUv, 2, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.indices.position(0);
+            GLES20.glDrawElements(GLES20.GL_TRIANGLES, prim.indexCount, prim.indexType, prim.indices);
+        }
+        GLES20.glUseProgram(program);
+    }
+
+    private void drawGlbUniformScale(GlbModel glb, float x, float y, float z, float scale,
+                                     float cr, float cg, float cb, float emissive) {
+        Matrix.setIdentityM(model, 0);
+        Matrix.translateM(model, 0, x, y, z);
+        Matrix.scaleM(model, 0, scale, scale, scale);
+        GLES20.glUseProgram(meshProgram);
+        GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);
+        for (GlbModel.Primitive prim : glb.primitives) {
+            Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
+            Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
+            GLES20.glUniformMatrix4fv(mUMVP, 1, false, mvp, 0);
+            GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
+            GLES20.glUniform4f(mUColor, prim.baseColor[0]*cr, prim.baseColor[1]*cg, prim.baseColor[2]*cb, prim.baseColor[3]);
+            GLES20.glUniform1f(mUAmbient, 0.45f);
+            GLES20.glUniform1f(mUEmissive, emissive);
+            boolean useTex = prim.textureId > 0;
+            GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
+            if (useTex) {
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, prim.textureId);
+                GLES20.glUniform1i(mUTex, 0);
+            }
+            prim.interleaved.position(0);
+            GLES20.glEnableVertexAttribArray(mAPos);
+            GLES20.glVertexAttribPointer(mAPos, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(3);
+            GLES20.glEnableVertexAttribArray(mANrm);
+            GLES20.glVertexAttribPointer(mANrm, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(6);
+            GLES20.glEnableVertexAttribArray(mAUv);
+            GLES20.glVertexAttribPointer(mAUv, 2, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.indices.position(0);
+            GLES20.glDrawElements(GLES20.GL_TRIANGLES, prim.indexCount, prim.indexType, prim.indices);
+        }
+        GLES20.glUseProgram(program);
+    }
+
+    private void drawBillboard(float x, float y, float z, float size, int texId,
+                               float r, float g, float b, float a) {
+        if (texId == 0 || quadPN == null) return;
+        float[] camR = {view[0], view[4], view[8]};
+        float[] camU = {view[1], view[5], view[9]};
+        Matrix.setIdentityM(model, 0);
+        model[0] = camR[0]*size; model[1] = camR[1]*size; model[2] = camR[2]*size;
+        model[4] = camU[0]*size; model[5] = camU[1]*size; model[6] = camU[2]*size;
+        model[8] = 0; model[9] = 0; model[10] = 1;
+        model[12] = x; model[13] = y; model[14] = z;
+
+        GLES20.glDepthMask(false);
+        GLES20.glUseProgram(spriteProgram);
+        Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
+        Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
+        GLES20.glUniformMatrix4fv(sUMVP, 1, false, mvp, 0);
+        GLES20.glUniform4f(sUColor, r, g, b, a);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, texId);
+        GLES20.glUniform1i(sUTex, 0);
+        quadPN.position(0);
+        GLES20.glEnableVertexAttribArray(sAPos);
+        GLES20.glVertexAttribPointer(sAPos, 3, GLES20.GL_FLOAT, false, 20, quadPN);
+        quadPN.position(3);
+        GLES20.glEnableVertexAttribArray(sAUv);
+        GLES20.glVertexAttribPointer(sAUv, 2, GLES20.GL_FLOAT, false, 20, quadPN);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
+        GLES20.glDepthMask(true);
+        GLES20.glUseProgram(program);
+    }
+
+    private static FloatBuffer buildQuad() {
+        float[] v = {
+                -0.5f,-0.5f,0, 0,0,
+                 0.5f,-0.5f,0, 1,0,
+                 0.5f, 0.5f,0, 1,1,
+                -0.5f,-0.5f,0, 0,0,
+                 0.5f, 0.5f,0, 1,1,
+                -0.5f, 0.5f,0, 0,1,
+        };
+        FloatBuffer b = ByteBuffer.allocateDirect(v.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        b.put(v).position(0);
+        return b;
+    }
+
 }

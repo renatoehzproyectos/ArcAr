@@ -27,6 +27,9 @@ public class MainActivity extends Activity {
     private GameRenderer renderer;
     private InputMapper input;
     private TextView hudText;
+    private TextView hudCam;
+    private TextView hudGoal;
+    private View boostFill;
     private TextView consoleText;
     private ScrollView consoleScroll;
     private final Handler ui = new Handler(Looper.getMainLooper());

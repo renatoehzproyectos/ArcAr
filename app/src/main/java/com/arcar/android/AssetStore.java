@@ -18,6 +18,7 @@ public class AssetStore {
 
     public GlbModel car;
     public GlbModel ball;
+    public GlbModel arena;
     public final Map<String, Integer> particleTex = new HashMap<>();
 
     private String loadedCarId = "";
@@ -36,6 +37,13 @@ public class AssetStore {
             ball = GlbModel.load(am, "models/ball.glb", 182.5f);
             if (ball != null) ball.uploadTextures();
             Log.i(TAG, "Ball loaded");
+        }
+        if (arena == null) {
+            // Standard soccar: 2*4096 x 2*5120 x 2048
+            arena = GlbModel.loadArena(am, "models/champions_field.glb",
+                    8192f, 10240f, 2048f);
+            if (arena != null) arena.uploadTextures();
+            Log.i(TAG, "Arena loaded prims=" + (arena != null ? arena.primitives.size() : 0));
         }
         String[] particles = {
                 "textures/particles/flame_01.png",

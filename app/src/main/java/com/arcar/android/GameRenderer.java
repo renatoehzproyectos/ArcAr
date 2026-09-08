@@ -173,7 +173,9 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             "  float ndl = max(dot(n, normalize(uLightDir)), 0.0);\n" +
             "  float light = uAmbient + (1.0 - uAmbient) * ndl;\n" +
             "  vec4 texC = (uUseTex > 0.5) ? texture2D(uTex, vUv) : vec4(1.0);\n" +
-            "  vec3 col = uColor.rgb * texC.rgb * light + uColor.rgb * uEmissive;\n" +
+            "  vec3 albedo = (uUseTex > 0.5) ? texC.rgb : uColor.rgb;\n" +
+            "  if (uUseTex > 0.5 && length(uColor.rgb) > 0.05) albedo *= max(uColor.rgb, vec3(0.25));\n" +
+            "  vec3 col = albedo * light + albedo * uEmissive;\n" +
             "  gl_FragColor = vec4(col, uColor.a * texC.a);\n" +
             "}\n";
         meshProgram = link(mvs, mfs);
@@ -318,7 +320,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         GLES20.glUniform3f(uLightDir, lightDir[0], lightDir[1], lightDir[2]);
 
         drawStadium();
-        drawBoostPads();
+        if (assets.arena == null) drawBoostPads();
         drawBallTrail();
         drawBoostTrail();
         drawParticles();
@@ -331,7 +333,12 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
     // ========== STADIUM ==========
     private void drawStadium() {
-        // Turf base
+        if (assets.arena != null && !assets.arena.primitives.isEmpty()) {
+            // Champions Field GLB already scaled to 8192 x 10240 x ~2048
+            drawGlbUniformScale(assets.arena, 0, 0, 0, 1f, 1f, 1f, 1f, 0.02f);
+            return;
+        }
+        // Fallback procedural stadium
         litBox(0,0,-2, 8200,10300,4, 0.12f,0.42f,0.18f, 1f, 0.55f, 0f);
         // Lighter turf stripes
         for (int i = -5; i <= 5; i++) {
@@ -478,7 +485,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         if (assets.ball != null && !assets.ball.primitives.isEmpty()) {
             // Ball model is unit-ish; scale so radius matches physics
             float s = (r * 2f) / Math.max(1f, assets.ball.radius * 2f);
-            drawGlbUniformScale(assets.ball, x, y, z, s, 1f, 1f, 1f, 0.08f);
+            drawGlbUniformScale(assets.ball, x, y, z, s, 1f, 1f, 1f, 0.35f);
             if (speed > 1500f) {
                 float a = Math.min((speed-1500f)/3000f, 0.45f);
                 int glow = assets.tex("textures/particles/flare_01.png");
@@ -705,14 +712,17 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                          float ux, float uy, float uz,
                          float rx, float ry, float rz,
                          float colorScale, float emissive) {
+        // Sketchfab cars: after normalize, +X is length (forward), +Y up-ish, +Z side.
+        // RL basis: forward=f, right=r, up=u. Map local (X,Y,Z) -> (forward, up, right) was wrong in screenshots.
+        // Correct: local +X -> forward, local +Y -> up, local +Z -> right
         Matrix.setIdentityM(model, 0);
-        // local +X -> forward, +Y -> right, +Z -> up
-        model[0] = fx; model[1] = fy; model[2] = fz;
-        model[4] = rx; model[5] = ry; model[6] = rz;
-        model[8] = ux; model[9] = uy; model[10] = uz;
-        model[12] = x; model[13] = y; model[14] = z;
+        model[0] = fx;  model[1] = fy;  model[2] = fz;   // X axis -> forward
+        model[4] = ux;  model[5] = uy;  model[6] = uz;   // Y axis -> up
+        model[8] = rx;  model[9] = ry;  model[10] = rz;  // Z axis -> right
+        model[12] = x;  model[13] = y;  model[14] = z;
+        // If still sideways, flip: try local -Z as forward via 180 yaw around up
         float[] rot = new float[16];
-        Matrix.setRotateM(rot, 0, 90f, 0f, 0f, 1f);
+        Matrix.setRotateM(rot, 0, 180f, 0f, 1f, 0f); // 180° around local Y (up) so nose matches RL +forward
         float[] oriented = new float[16];
         Matrix.multiplyMM(oriented, 0, model, 0, rot, 0);
         System.arraycopy(oriented, 0, model, 0, 16);
@@ -726,7 +736,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
             GLES20.glUniform4f(mUColor, prim.baseColor[0]*colorScale, prim.baseColor[1]*colorScale,
                     prim.baseColor[2]*colorScale, prim.baseColor[3]);
-            GLES20.glUniform1f(mUAmbient, 0.4f);
+            GLES20.glUniform1f(mUAmbient, 0.55f);
             GLES20.glUniform1f(mUEmissive, emissive);
             boolean useTex = prim.textureId > 0;
             GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
@@ -763,7 +773,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             GLES20.glUniformMatrix4fv(mUMVP, 1, false, mvp, 0);
             GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
             GLES20.glUniform4f(mUColor, prim.baseColor[0]*cr, prim.baseColor[1]*cg, prim.baseColor[2]*cb, prim.baseColor[3]);
-            GLES20.glUniform1f(mUAmbient, 0.45f);
+            GLES20.glUniform1f(mUAmbient, 0.6f);
             GLES20.glUniform1f(mUEmissive, emissive);
             boolean useTex = prim.textureId > 0;
             GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);

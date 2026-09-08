@@ -44,9 +44,25 @@ public class GlbModel {
     public static GlbModel load(AssetManager am, String assetPath, float targetMaxExtent) {
         try {
             byte[] data = readAll(am.open(assetPath));
-            return parse(data, targetMaxExtent);
+            return parse(data, targetMaxExtent, false, 0, 0, 0);
         } catch (Exception e) {
             Log.e(TAG, "Failed to load " + assetPath, e);
+            return null;
+        }
+    }
+
+    /**
+     * Load stadium and scale so playable footprint matches RL standard arena:
+     * width X = 2*4096, length Y = 2*5120, height ~2048.
+     * Model is typically Y-up; we remap to Z-up (RL).
+     */
+    public static GlbModel loadArena(AssetManager am, String assetPath,
+                                     float targetWidthX, float targetLengthY, float targetHeightZ) {
+        try {
+            byte[] data = readAll(am.open(assetPath));
+            return parse(data, 0f, true, targetWidthX, targetLengthY, targetHeightZ);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load arena " + assetPath, e);
             return null;
         }
     }
@@ -60,7 +76,8 @@ public class GlbModel {
         return bos.toByteArray();
     }
 
-    private static GlbModel parse(byte[] data, float targetMaxExtent) throws Exception {
+    private static GlbModel parse(byte[] data, float targetMaxExtent, boolean arenaMode,
+                                   float targetW, float targetL, float targetH) throws Exception {
         ByteBuffer bb = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
         int magic = bb.getInt();
         int version = bb.getInt();
@@ -269,7 +286,27 @@ public class GlbModel {
                             int source = tex.getInt("source");
                             if (source >= 0 && source < imageBytes.size() && imageBytes.get(source) != null) {
                                 p.textureId = -1 - source; // mark for later upload: -(source+1)
+                                // textured surfaces: avoid pure-black base killing albedo
+                                if (p.baseColor[0] + p.baseColor[1] + p.baseColor[2] < 0.05f) {
+                                    p.baseColor[0] = p.baseColor[1] = p.baseColor[2] = 1f;
+                                }
                             }
+                        }
+                    }
+                    // Untextured near-black paint/tires: lift to visible colors
+                    float lum = p.baseColor[0] + p.baseColor[1] + p.baseColor[2];
+                    if (p.textureId == 0 && lum < 0.08f) {
+                        String mname = mat.optString("name", "").toLowerCase();
+                        if (mname.contains("tread") || mname.contains("tire") || mname.contains("rubber")) {
+                            p.baseColor[0] = p.baseColor[1] = p.baseColor[2] = 0.12f;
+                        } else if (mname.contains("window") || mname.contains("glass")) {
+                            p.baseColor[0] = 0.05f; p.baseColor[1] = 0.08f; p.baseColor[2] = 0.12f;
+                            p.baseColor[3] = 0.65f;
+                        } else if (mname.contains("paint") || mname.contains("body") || mname.contains("chassis")) {
+                            // team blue default
+                            p.baseColor[0] = 0.12f; p.baseColor[1] = 0.35f; p.baseColor[2] = 0.95f;
+                        } else {
+                            p.baseColor[0] = 0.25f; p.baseColor[1] = 0.25f; p.baseColor[2] = 0.28f;
                         }
                     }
                 }
@@ -277,7 +314,7 @@ public class GlbModel {
             }
         }
 
-        // Normalize: center + scale
+        // Normalize: center + scale (cars) or arena axis remap + non-uniform scale
         if (!allPos.isEmpty()) {
             float minX=1e9f,minY=1e9f,minZ=1e9f,maxX=-1e9f,maxY=-1e9f,maxZ=-1e9f;
             for (float[] p : allPos) {
@@ -286,27 +323,166 @@ public class GlbModel {
             }
             float cx=(minX+maxX)*0.5f, cy=(minY+maxY)*0.5f, cz=(minZ+maxZ)*0.5f;
             float sx=maxX-minX, sy=maxY-minY, sz=maxZ-minZ;
-            float maxExt = Math.max(sx, Math.max(sy, sz));
-            float scale = maxExt > 1e-6f ? (targetMaxExtent / maxExt) : 1f;
-            model.radius = maxExt * scale * 0.5f;
+            Log.i(TAG, "raw bbox size " + sx + "," + sy + "," + sz + " center " + cx + "," + cy + "," + cz);
 
-            for (Primitive p : model.primitives) {
-                FloatBuffer fb = p.interleaved;
-                for (int v = 0; v < p.vertexCount; v++) {
-                    int o = v * 8;
-                    float x = (fb.get(o) - cx) * scale;
-                    float y = (fb.get(o + 1) - cy) * scale;
-                    float z = (fb.get(o + 2) - cz) * scale;
-                    fb.put(o, x); fb.put(o + 1, y); fb.put(o + 2, z);
+            if (arenaMode) {
+                // Detect up axis: smallest extent is usually height for stadium
+                // Champions Field model: after node xform, typically Y is up (sy small) or Z is up
+                boolean yUp = (sy <= sx && sy <= sz);
+                // Target: RL X=width, Y=length, Z=height. Floor at z≈0.
+                float scaleX, scaleY, scaleZ;
+                for (Primitive p : model.primitives) {
+                    FloatBuffer fb = p.interleaved;
+                    for (int v = 0; v < p.vertexCount; v++) {
+                        int o = v * 8;
+                        float x = fb.get(o) - cx;
+                        float y = fb.get(o + 1) - cy;
+                        float z = fb.get(o + 2) - cz;
+                        float nx, ny, nz, nnx, nny, nnz;
+                        nnx = fb.get(o+3); nny = fb.get(o+4); nnz = fb.get(o+5);
+                        if (yUp) {
+                            // model (x,y,z) with y-up → RL (x, z, y) so length along model Z → RL Y
+                            nx = x; ny = z; nz = y;
+                            float tnx=nnx, tny=nnz, tnz=nny;
+                            nnx=tnx; nny=tny; nnz=tnz;
+                        } else {
+                            nx = x; ny = y; nz = z;
+                        }
+                        fb.put(o, nx); fb.put(o+1, ny); fb.put(o+2, nz);
+                        fb.put(o+3, nnx); fb.put(o+4, nny); fb.put(o+5, nnz);
+                    }
+                    fb.position(0);
                 }
-                fb.position(0);
+                // Recompute bbox in RL space
+                minX=1e9f;minY=1e9f;minZ=1e9f;maxX=-1e9f;maxY=-1e9f;maxZ=-1e9f;
+                for (Primitive p : model.primitives) {
+                    FloatBuffer fb = p.interleaved;
+                    for (int v = 0; v < p.vertexCount; v++) {
+                        int o = v * 8;
+                        float x=fb.get(o), y=fb.get(o+1), z=fb.get(o+2);
+                        minX=Math.min(minX,x); minY=Math.min(minY,y); minZ=Math.min(minZ,z);
+                        maxX=Math.max(maxX,x); maxY=Math.max(maxY,y); maxZ=Math.max(maxZ,z);
+                    }
+                }
+                sx = maxX-minX; sy = maxY-minY; sz = maxZ-minZ;
+                // Non-uniform scale to match arena playable box
+                // Footprint should cover field: use horizontal scales independently
+                scaleX = sx > 1e-6f ? targetW / sx : 1f;
+                scaleY = sy > 1e-6f ? targetL / sy : 1f;
+                // Height: scale so stadium height maps near ARENA_HEIGHT (allow a bit taller for stands)
+                float heightTarget = targetH * 1.15f; // stands slightly above playable ceiling
+                scaleZ = sz > 1e-6f ? heightTarget / sz : 1f;
+                // Keep uniform-ish for architecture if aspect is close; blend toward min of horizontal for walls
+                // Prefer independent X/Y so goals sit near ±5120
+                float floorZ = minZ;
+                for (Primitive p : model.primitives) {
+                    FloatBuffer fb = p.interleaved;
+                    for (int v = 0; v < p.vertexCount; v++) {
+                        int o = v * 8;
+                        float x = fb.get(o) * scaleX;
+                        float y = fb.get(o + 1) * scaleY;
+                        float z = (fb.get(o + 2) - floorZ) * scaleZ; // floor on z=0
+                        fb.put(o, x); fb.put(o + 1, y); fb.put(o + 2, z);
+                        // scale normals inversely for non-uniform — approximate normalize later
+                        float nx = fb.get(o+3) / scaleX;
+                        float ny = fb.get(o+4) / scaleY;
+                        float nz = fb.get(o+5) / scaleZ;
+                        float len = (float)Math.sqrt(nx*nx+ny*ny+nz*nz);
+                        if (len > 1e-8f) { nx/=len; ny/=len; nz/=len; }
+                        fb.put(o+3, nx); fb.put(o+4, ny); fb.put(o+5, nz);
+                    }
+                    fb.position(0);
+                }
+                model.radius = 0.5f * (float)Math.sqrt(targetW*targetW + targetL*targetL + targetH*targetH);
+                Log.i(TAG, "arena scale X=" + scaleX + " Y=" + scaleY + " Z=" + scaleZ + " yUp=" + yUp);
+            } else {
+                float maxExt = Math.max(sx, Math.max(sy, sz));
+                float scale = maxExt > 1e-6f ? (targetMaxExtent / maxExt) : 1f;
+                model.radius = maxExt * scale * 0.5f;
+                for (Primitive p : model.primitives) {
+                    FloatBuffer fb = p.interleaved;
+                    for (int v = 0; v < p.vertexCount; v++) {
+                        int o = v * 8;
+                        float x = (fb.get(o) - cx) * scale;
+                        float y = (fb.get(o + 1) - cy) * scale;
+                        float z = (fb.get(o + 2) - cz) * scale;
+                        fb.put(o, x); fb.put(o + 1, y); fb.put(o + 2, z);
+                    }
+                    fb.position(0);
+                }
             }
 
-            // Upload textures on GL thread — store raw bytes temporarily via textureId marker
             model._imageBytes = imageBytes;
+            mergePrimitives(model);
         }
         Log.i(TAG, "Loaded primitives=" + model.primitives.size() + " radius=" + model.radius);
         return model;
+    }
+
+    /** Merge primitives that share the same texture marker + base color to cut draw calls. */
+    private static void mergePrimitives(GlbModel model) {
+        if (model.primitives.size() < 2) return;
+        java.util.Map<String, java.util.List<Primitive>> groups = new java.util.HashMap<>();
+        for (Primitive p : model.primitives) {
+            String key = p.textureId + "|" + p.baseColor[0] + "|" + p.baseColor[1] + "|" + p.baseColor[2];
+            if (!groups.containsKey(key)) groups.put(key, new java.util.ArrayList<>());
+            groups.get(key).add(p);
+        }
+        java.util.List<Primitive> merged = new java.util.ArrayList<>();
+        for (java.util.List<Primitive> group : groups.values()) {
+            if (group.size() == 1) { merged.add(group.get(0)); continue; }
+            int vCount = 0, iCount = 0;
+            boolean useInt = false;
+            for (Primitive p : group) {
+                vCount += p.vertexCount;
+                iCount += p.indexCount;
+                if (p.indexType == 0x1405) useInt = true;
+            }
+            if (vCount > 65000) useInt = true;
+            float[] inter = new float[vCount * 8];
+            int[] indices = new int[iCount];
+            int vOff = 0, iOff = 0;
+            for (Primitive p : group) {
+                FloatBuffer fb = p.interleaved;
+                for (int v = 0; v < p.vertexCount; v++) {
+                    for (int k = 0; k < 8; k++) inter[(vOff + v) * 8 + k] = fb.get(v * 8 + k);
+                }
+                p.indices.position(0);
+                if (p.indexType == GLES20.GL_UNSIGNED_SHORT) {
+                    java.nio.ShortBuffer sb = p.indices.asShortBuffer();
+                    for (int i = 0; i < p.indexCount; i++) indices[iOff + i] = (sb.get(i) & 0xFFFF) + vOff;
+                } else {
+                    java.nio.IntBuffer ib = p.indices.asIntBuffer();
+                    for (int i = 0; i < p.indexCount; i++) indices[iOff + i] = ib.get(i) + vOff;
+                }
+                vOff += p.vertexCount;
+                iOff += p.indexCount;
+            }
+            Primitive m = new Primitive();
+            m.vertexCount = vCount;
+            m.indexCount = iCount;
+            m.baseColor = group.get(0).baseColor.clone();
+            m.textureId = group.get(0).textureId;
+            m.interleaved = ByteBuffer.allocateDirect(inter.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            m.interleaved.put(inter).position(0);
+            if (useInt || vCount > 65535) {
+                m.indexType = 0x1405;
+                ByteBuffer ib = ByteBuffer.allocateDirect(indices.length * 4).order(ByteOrder.nativeOrder());
+                ib.asIntBuffer().put(indices).position(0);
+                m.indices = ib;
+            } else {
+                m.indexType = GLES20.GL_UNSIGNED_SHORT;
+                ByteBuffer ib = ByteBuffer.allocateDirect(indices.length * 2).order(ByteOrder.nativeOrder());
+                java.nio.ShortBuffer sb = ib.asShortBuffer();
+                for (int idx : indices) sb.put((short) idx);
+                sb.position(0);
+                m.indices = ib;
+            }
+            merged.add(m);
+        }
+        model.primitives.clear();
+        model.primitives.addAll(merged);
+        Log.i(TAG, "Merged to " + model.primitives.size() + " draw calls");
     }
 
     // temporary image storage until uploadTextures() is called on GL thread

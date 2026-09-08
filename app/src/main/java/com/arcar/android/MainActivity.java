@@ -134,11 +134,14 @@ public class MainActivity extends Activity {
 
             engineReady = true;
             renderer.setEngineReady(true);
+            try {
+                NativeBridge.nativeSetInfiniteBoost(input.isInfiniteBoost());
+            } catch (Throwable ignored) {}
             ui.post(() -> {
                 hudText.setText("ArcAr ready — drive!");
                 startControlPump();
             });
-            log("READY");
+            log("READY (infiniteBoost=" + input.isInfiniteBoost() + ")");
         } catch (Throwable t) {
             log("INIT CRASH: " + t);
             ui.post(() -> hudText.setText("ERROR: " + t.getClass().getSimpleName()));
@@ -196,7 +199,12 @@ public class MainActivity extends Activity {
         super.onResume();
         if (glView != null) glView.onResume();
         input = new InputMapper(this);
-        if (engineReady) startControlPump();
+        if (engineReady) {
+            try {
+                NativeBridge.nativeSetInfiniteBoost(input.isInfiniteBoost());
+            } catch (Throwable ignored) {}
+            startControlPump();
+        }
     }
 
     @Override

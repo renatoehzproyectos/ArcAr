@@ -146,6 +146,11 @@ void GameEngine::ToggleBallCam() {
 	ballCam_ = !ballCam_;
 }
 
+void GameEngine::SetInfiniteBoost(bool on) {
+	std::lock_guard<std::mutex> lock(mutex_);
+	infiniteBoost_ = on;
+}
+
 void GameEngine::ResetToKickoff() {
 	std::lock_guard<std::mutex> lock(mutex_);
 	if (!ready_ || !arena_ || !player_) return;
@@ -173,6 +178,14 @@ void GameEngine::Update(float dtSeconds) {
 	if (!ready_ || !arena_ || !player_) return;
 
 	player_->controls = pendingControls_;
+	// Infinite boost = unlimited fuel only; player still must hold boost to use it
+	if (infiniteBoost_) {
+		CarState cs = player_->GetState();
+		if (cs.boost < 100.f) {
+			cs.boost = 100.f;
+			player_->SetState(cs);
+		}
+	}
 
 	timeAccum_ += dtSeconds;
 	if (timeAccum_ > 0.25f) timeAccum_ = 0.25f;

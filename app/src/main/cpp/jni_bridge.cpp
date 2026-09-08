@@ -55,6 +55,11 @@ Java_com_arcar_android_NativeBridge_nativeSetBallCamImpl(JNIEnv*, jclass, jboole
 }
 
 JNIEXPORT void JNICALL
+Java_com_arcar_android_NativeBridge_nativeSetInfiniteBoostImpl(JNIEnv*, jclass, jboolean on) {
+	GameEngine::Instance().SetInfiniteBoost(on == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL
 Java_com_arcar_android_NativeBridge_nativeResetImpl(JNIEnv*, jclass) {
 	GameEngine::Instance().ResetToKickoff();
 }

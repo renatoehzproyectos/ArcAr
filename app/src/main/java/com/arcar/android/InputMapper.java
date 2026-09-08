@@ -7,22 +7,24 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 
 /**
- * Maps gamepad / keyboard → CarControls only (simulation).
- * Each Action supports up to TWO key bindings (primary + secondary).
- * Camera / reset / console are NOT handled here.
+ * Rocket League-style mapping:
+ * - Sticks: steer / pitch / yaw (analogue only)
+ * - Triggers: accelerate / decelerate (also bindable as digital)
+ * - Buttons: jump, boost, powerslide, air roll L/R
+ *
+ * One physical key can be bound to MANY actions at once
+ * (e.g. L2 = decelerate AND air roll left).
  */
 public class InputMapper {
 
-    public static final int SLOT_PRIMARY = 0;
-    public static final int SLOT_SECONDARY = 1;
     public static final int UNBOUND = 0;
 
     public static final class ControlsState {
-        public float throttle;   // -1..1
-        public float steer;      // -1..1
-        public float pitch;      // -1..1
-        public float yaw;        // -1..1
-        public float roll;       // -1..1
+        public float throttle;
+        public float steer;
+        public float pitch;
+        public float yaw;
+        public float roll;
         public boolean jump;
         public boolean boost;
         public boolean handbrake;
@@ -30,159 +32,212 @@ public class InputMapper {
 
     private final SharedPreferences prefs;
 
-    // Analog axes (sticks / triggers) — always available alongside digital binds
+    // Analogue
     private float axisSteer, axisPitch, axisYaw;
-    private float axisAccel, axisReverse; // triggers 0..1
+    private float axisAccel, axisReverse;
 
-    // Digital held state for each sim action
+    // Digital held per action (OR of all keys bound to that action)
     private final boolean[] held = new boolean[Action.values().length];
+    // Which keycodes are currently down
+    private final android.util.SparseBooleanArray keysDown = new android.util.SparseBooleanArray();
 
-    // Keyboard axis overlay from WASD-style flags (optional, from MainActivity)
-    private float kbSteer, kbThrottle, kbPitch, kbYaw;
+    private boolean infiniteBoost = false;
 
     public InputMapper(Context ctx) {
-        prefs = ctx.getSharedPreferences("arcar_bindings_v2", Context.MODE_PRIVATE);
+        prefs = ctx.getSharedPreferences("arcar_bindings_v3", Context.MODE_PRIVATE);
         ensureDefaults();
+        infiniteBoost = prefs.getBoolean("infinite_boost", false);
     }
 
     private void ensureDefaults() {
         SharedPreferences.Editor e = prefs.edit();
-        // Primary defaults (Xbox-style + keyboard)
-        putDefault(e, Action.JUMP, SLOT_PRIMARY, KeyEvent.KEYCODE_BUTTON_A);
-        putDefault(e, Action.JUMP, SLOT_SECONDARY, KeyEvent.KEYCODE_SPACE);
-
-        putDefault(e, Action.BOOST, SLOT_PRIMARY, KeyEvent.KEYCODE_BUTTON_B);
-        putDefault(e, Action.BOOST, SLOT_SECONDARY, KeyEvent.KEYCODE_SHIFT_LEFT);
-
-        putDefault(e, Action.POWERSLIDE, SLOT_PRIMARY, KeyEvent.KEYCODE_BUTTON_X);
-        putDefault(e, Action.POWERSLIDE, SLOT_SECONDARY, KeyEvent.KEYCODE_CTRL_LEFT);
-
-        putDefault(e, Action.AIR_ROLL_LEFT, SLOT_PRIMARY, KeyEvent.KEYCODE_BUTTON_L1);
-        putDefault(e, Action.AIR_ROLL_LEFT, SLOT_SECONDARY, KeyEvent.KEYCODE_Q);
-
-        putDefault(e, Action.AIR_ROLL_RIGHT, SLOT_PRIMARY, KeyEvent.KEYCODE_BUTTON_R1);
-        putDefault(e, Action.AIR_ROLL_RIGHT, SLOT_SECONDARY, KeyEvent.KEYCODE_E);
-
-        putDefault(e, Action.ACCELERATE, SLOT_PRIMARY, KeyEvent.KEYCODE_W);
-        putDefault(e, Action.ACCELERATE, SLOT_SECONDARY, KeyEvent.KEYCODE_DPAD_UP);
-
-        putDefault(e, Action.DECELERATE, SLOT_PRIMARY, KeyEvent.KEYCODE_S);
-        putDefault(e, Action.DECELERATE, SLOT_SECONDARY, KeyEvent.KEYCODE_DPAD_DOWN);
-
-        putDefault(e, Action.STEER_LEFT, SLOT_PRIMARY, KeyEvent.KEYCODE_A);
-        putDefault(e, Action.STEER_LEFT, SLOT_SECONDARY, KeyEvent.KEYCODE_DPAD_LEFT);
-
-        putDefault(e, Action.STEER_RIGHT, SLOT_PRIMARY, KeyEvent.KEYCODE_D);
-        putDefault(e, Action.STEER_RIGHT, SLOT_SECONDARY, KeyEvent.KEYCODE_DPAD_RIGHT);
-
-        putDefault(e, Action.PITCH_UP, SLOT_PRIMARY, UNBOUND);
-        putDefault(e, Action.PITCH_DOWN, SLOT_PRIMARY, UNBOUND);
-        putDefault(e, Action.YAW_LEFT, SLOT_PRIMARY, UNBOUND);
-        putDefault(e, Action.YAW_RIGHT, SLOT_PRIMARY, UNBOUND);
-
+        // One primary bind each; same key MAY appear on multiple actions intentionally
+        putDefault(e, Action.JUMP, KeyEvent.KEYCODE_BUTTON_A);
+        putDefault(e, Action.BOOST, KeyEvent.KEYCODE_BUTTON_B);
+        putDefault(e, Action.POWERSLIDE, KeyEvent.KEYCODE_BUTTON_X);
+        putDefault(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_BUTTON_L1);
+        putDefault(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_BUTTON_R1);
+        putDefault(e, Action.ACCELERATE, KeyEvent.KEYCODE_W);
+        putDefault(e, Action.DECELERATE, KeyEvent.KEYCODE_S);
+        // Keyboard secondaries stored as extra list entries — see getKeycodes
+        putDefaultExtra(e, Action.JUMP, KeyEvent.KEYCODE_SPACE);
+        putDefaultExtra(e, Action.BOOST, KeyEvent.KEYCODE_SHIFT_LEFT);
+        putDefaultExtra(e, Action.POWERSLIDE, KeyEvent.KEYCODE_CTRL_LEFT);
+        putDefaultExtra(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_Q);
+        putDefaultExtra(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_E);
+        putDefaultExtra(e, Action.ACCELERATE, KeyEvent.KEYCODE_DPAD_UP);
+        putDefaultExtra(e, Action.DECELERATE, KeyEvent.KEYCODE_DPAD_DOWN);
+        if (!prefs.contains("infinite_boost")) e.putBoolean("infinite_boost", false);
         e.apply();
     }
 
-    private void putDefault(SharedPreferences.Editor e, Action a, int slot, int keyCode) {
-        String k = keyName(a, slot);
-        if (!prefs.contains(k)) e.putInt(k, keyCode);
+    private void putDefault(SharedPreferences.Editor e, Action a, int keyCode) {
+        String k = keysPref(a);
+        if (!prefs.contains(k)) e.putString(k, String.valueOf(keyCode));
     }
 
-    private static String keyName(Action a, int slot) {
-        return "bind_" + a.name() + "_" + slot;
-    }
-
-    /** Get binding for slot 0 or 1. 0 = unbound. */
-    public int getBinding(Action a, int slot) {
-        return prefs.getInt(keyName(a, slot), UNBOUND);
-    }
-
-    /** @deprecated use getBinding(action, slot) */
-    public int getBinding(Action a) {
-        return getBinding(a, SLOT_PRIMARY);
-    }
-
-    /**
-     * Set one slot without clearing the other.
-     * If keyCode is already used by another action, that other slot is cleared.
-     */
-    public void setBinding(Action a, int slot, int keyCode) {
-        SharedPreferences.Editor e = prefs.edit();
-        if (keyCode != UNBOUND) {
-            // Remove this key from any other action/slot so it only maps once
-            for (Action other : Action.values()) {
-                for (int s = 0; s <= 1; s++) {
-                    if (other == a && s == slot) continue;
-                    if (prefs.getInt(keyName(other, s), UNBOUND) == keyCode) {
-                        e.putInt(keyName(other, s), UNBOUND);
-                    }
-                }
-            }
+    private void putDefaultExtra(SharedPreferences.Editor e, Action a, int keyCode) {
+        String k = keysPref(a);
+        if (!prefs.contains(k)) return; // primary will set it
+        // Only add extra if still at single default from putDefault in same batch — handled after apply
+        // Simpler: append if not present when loading first time via flag
+        String flag = "seeded_" + a.name();
+        if (!prefs.contains(flag)) {
+            String cur = prefs.getString(k, "");
+            // will be fixed in seedExtras
         }
-        e.putInt(keyName(a, slot), keyCode);
+    }
+
+    private void seedExtrasOnce() {
+        if (prefs.getBoolean("seeded_extras_v3", false)) return;
+        SharedPreferences.Editor e = prefs.edit();
+        appendKey(e, Action.JUMP, KeyEvent.KEYCODE_SPACE);
+        appendKey(e, Action.BOOST, KeyEvent.KEYCODE_SHIFT_LEFT);
+        appendKey(e, Action.POWERSLIDE, KeyEvent.KEYCODE_CTRL_LEFT);
+        appendKey(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_Q);
+        appendKey(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_E);
+        appendKey(e, Action.ACCELERATE, KeyEvent.KEYCODE_DPAD_UP);
+        appendKey(e, Action.DECELERATE, KeyEvent.KEYCODE_DPAD_DOWN);
+        e.putBoolean("seeded_extras_v3", true);
         e.apply();
     }
 
-    /** Replace primary only (legacy). */
-    public void setBinding(Action a, int keyCode) {
-        setBinding(a, SLOT_PRIMARY, keyCode);
+    private static String keysPref(Action a) {
+        return "keys_" + a.name();
     }
 
-    public void clearBinding(Action a, int slot) {
-        setBinding(a, slot, UNBOUND);
+    /** All keycodes bound to this action (comma-separated in prefs). */
+    public int[] getKeycodes(Action a) {
+        seedExtrasOnce();
+        String raw = prefs.getString(keysPref(a), "");
+        if (raw == null || raw.isEmpty()) return new int[0];
+        String[] parts = raw.split(",");
+        int[] out = new int[parts.length];
+        int n = 0;
+        for (String p : parts) {
+            p = p.trim();
+            if (p.isEmpty()) continue;
+            try {
+                int v = Integer.parseInt(p);
+                if (v != UNBOUND) out[n++] = v;
+            } catch (NumberFormatException ignored) {}
+        }
+        if (n == out.length) return out;
+        int[] trimmed = new int[n];
+        System.arraycopy(out, 0, trimmed, 0, n);
+        return trimmed;
+    }
+
+    private void saveKeycodes(Action a, int[] codes) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < codes.length; i++) {
+            if (codes[i] == UNBOUND) continue;
+            if (sb.length() > 0) sb.append(',');
+            sb.append(codes[i]);
+        }
+        prefs.edit().putString(keysPref(a), sb.toString()).apply();
+    }
+
+    /** Add a key to this action without removing it from other actions. */
+    public void addBinding(Action a, int keyCode) {
+        if (keyCode == UNBOUND) return;
+        int[] cur = getKeycodes(a);
+        for (int c : cur) if (c == keyCode) return; // already
+        int[] next = new int[cur.length + 1];
+        System.arraycopy(cur, 0, next, 0, cur.length);
+        next[cur.length] = keyCode;
+        saveKeycodes(a, next);
+    }
+
+    private void appendKey(SharedPreferences.Editor e, Action a, int keyCode) {
+        String k = keysPref(a);
+        String cur = prefs.getString(k, e == null ? "" : null);
+        // read from prefs after primary defaults applied
+        cur = prefs.getString(k, "");
+        if (cur == null) cur = "";
+        if (cur.contains(String.valueOf(keyCode))) return;
+        if (cur.isEmpty()) cur = String.valueOf(keyCode);
+        else cur = cur + "," + keyCode;
+        e.putString(k, cur);
+    }
+
+    /** Remove one key from this action only. */
+    public void removeBinding(Action a, int keyCode) {
+        int[] cur = getKeycodes(a);
+        int n = 0;
+        int[] tmp = new int[cur.length];
+        for (int c : cur) if (c != keyCode) tmp[n++] = c;
+        int[] next = new int[n];
+        System.arraycopy(tmp, 0, next, 0, n);
+        saveKeycodes(a, next);
+    }
+
+    /** Clear all keys for this action. */
+    public void clearBindings(Action a) {
+        saveKeycodes(a, new int[0]);
     }
 
     public void resetBindings() {
         prefs.edit().clear().apply();
         ensureDefaults();
-        // clear held state
+        seedExtrasOnce();
         for (int i = 0; i < held.length; i++) held[i] = false;
+        keysDown.clear();
+        infiniteBoost = false;
     }
 
-    /** Human-readable label for both slots, e.g. "W / DPAD_UP" */
+    public boolean isInfiniteBoost() {
+        return infiniteBoost;
+    }
+
+    public void setInfiniteBoost(boolean on) {
+        infiniteBoost = on;
+        prefs.edit().putBoolean("infinite_boost", on).apply();
+    }
+
     public String formatBindings(Action a) {
-        int p = getBinding(a, SLOT_PRIMARY);
-        int s = getBinding(a, SLOT_SECONDARY);
-        if (p == UNBOUND && s == UNBOUND) return "(none)";
-        if (s == UNBOUND) return keyCodeLabel(p);
-        if (p == UNBOUND) return keyCodeLabel(s);
-        return keyCodeLabel(p) + "  /  " + keyCodeLabel(s);
+        int[] codes = getKeycodes(a);
+        if (codes.length == 0) return "(none)";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < codes.length; i++) {
+            if (i > 0) sb.append("  +  ");
+            sb.append(keyCodeLabel(codes[i]));
+        }
+        return sb.toString();
     }
 
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        return handleButton(keyCode, true);
+        keysDown.put(keyCode, true);
+        recomputeHeld();
+        return isBoundKey(keyCode);
     }
 
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        return handleButton(keyCode, false);
+        keysDown.put(keyCode, false);
+        recomputeHeld();
+        return isBoundKey(keyCode);
     }
 
-    private boolean handleButton(int keyCode, boolean down) {
-        boolean matched = false;
+    private boolean isBoundKey(int keyCode) {
         for (Action a : Action.values()) {
-            int p = getBinding(a, SLOT_PRIMARY);
-            int s = getBinding(a, SLOT_SECONDARY);
-            if (keyCode == p || keyCode == s) {
-                // Held if either bound key is still conceptually down — we track OR of slots
-                // Simple approach: set held from this key event; for multi-key need per-slot
-                setHeldFromKey(a, keyCode, down);
-                matched = true;
+            for (int c : getKeycodes(a)) {
+                if (c == keyCode) return true;
             }
         }
-        return matched;
+        return false;
     }
 
-    // Per-slot hold tracking so releasing one key doesn't clear if the other is still down
-    private final boolean[] heldPrimary = new boolean[Action.values().length];
-    private final boolean[] heldSecondary = new boolean[Action.values().length];
-
-    private void setHeldFromKey(Action a, int keyCode, boolean down) {
-        int idx = a.ordinal();
-        int p = getBinding(a, SLOT_PRIMARY);
-        int s = getBinding(a, SLOT_SECONDARY);
-        if (keyCode == p) heldPrimary[idx] = down;
-        if (keyCode == s) heldSecondary[idx] = down;
-        held[idx] = heldPrimary[idx] || heldSecondary[idx];
+    private void recomputeHeld() {
+        for (Action a : Action.values()) {
+            boolean h = false;
+            for (int c : getKeycodes(a)) {
+                if (keysDown.get(c, false)) {
+                    h = true;
+                    break;
+                }
+            }
+            held[a.ordinal()] = h;
+        }
     }
 
     public boolean onGenericMotion(MotionEvent event) {
@@ -192,13 +247,14 @@ public class InputMapper {
         }
         if (event.getAction() != MotionEvent.ACTION_MOVE) return false;
 
+        // Analogue only — like Rocket League
         axisSteer = deadzone(event.getAxisValue(MotionEvent.AXIS_X));
         axisPitch = deadzone(-event.getAxisValue(MotionEvent.AXIS_Y));
         axisYaw = deadzone(event.getAxisValue(MotionEvent.AXIS_Z));
         float rx = deadzone(event.getAxisValue(MotionEvent.AXIS_RX));
         if (Math.abs(rx) > Math.abs(axisYaw)) axisYaw = rx;
+        // Right stick Y unused for pitch (RL uses left stick for pitch)
 
-        // RT = accelerate, LT = decelerate (always, independent of button binds)
         axisAccel = clamp01(event.getAxisValue(MotionEvent.AXIS_GAS));
         if (axisAccel == 0f) axisAccel = clamp01(event.getAxisValue(MotionEvent.AXIS_RTRIGGER));
         axisReverse = clamp01(event.getAxisValue(MotionEvent.AXIS_BRAKE));
@@ -207,56 +263,27 @@ public class InputMapper {
         return true;
     }
 
-    /** Optional keyboard axis overlay from MainActivity (legacy WASD). Prefer binds instead. */
-    public void setKeyboardAxes(float steer, float throttle, float pitch, float yaw) {
-        kbSteer = steer;
-        kbThrottle = throttle;
-        kbPitch = pitch;
-        kbYaw = yaw;
-    }
-
     public ControlsState poll() {
         ControlsState st = new ControlsState();
 
-        // Throttle: triggers + digital ACCELERATE / DECELERATE
         float th = axisAccel - axisReverse;
-        if (isHeld(Action.ACCELERATE)) th = Math.max(th, 1f);
-        if (isHeld(Action.DECELERATE)) th = Math.min(th, -1f);
-        if (kbThrottle != 0f) th = kbThrottle;
+        if (held[Action.ACCELERATE.ordinal()]) th = Math.max(th, 1f);
+        if (held[Action.DECELERATE.ordinal()]) th = Math.min(th, -1f);
         st.throttle = clamp(th, -1f, 1f);
 
-        // Steer: stick + digital
-        float steer = axisSteer;
-        if (isHeld(Action.STEER_LEFT)) steer = Math.min(steer, -1f);
-        if (isHeld(Action.STEER_RIGHT)) steer = Math.max(steer, 1f);
-        if (kbSteer != 0f) steer = kbSteer;
-        st.steer = clamp(steer, -1f, 1f);
-
-        float pitch = axisPitch;
-        if (isHeld(Action.PITCH_UP)) pitch = Math.max(pitch, 1f);
-        if (isHeld(Action.PITCH_DOWN)) pitch = Math.min(pitch, -1f);
-        if (kbPitch != 0f) pitch = kbPitch;
-        st.pitch = clamp(pitch, -1f, 1f);
-
-        float yaw = axisYaw;
-        if (isHeld(Action.YAW_LEFT)) yaw = Math.min(yaw, -1f);
-        if (isHeld(Action.YAW_RIGHT)) yaw = Math.max(yaw, 1f);
-        if (kbYaw != 0f) yaw = kbYaw;
-        st.yaw = clamp(yaw, -1f, 1f);
+        st.steer = clamp(axisSteer, -1f, 1f);
+        st.pitch = clamp(axisPitch, -1f, 1f);
+        st.yaw = clamp(axisYaw, -1f, 1f);
 
         float roll = 0f;
-        if (isHeld(Action.AIR_ROLL_LEFT)) roll -= 1f;
-        if (isHeld(Action.AIR_ROLL_RIGHT)) roll += 1f;
+        if (held[Action.AIR_ROLL_LEFT.ordinal()]) roll -= 1f;
+        if (held[Action.AIR_ROLL_RIGHT.ordinal()]) roll += 1f;
         st.roll = roll;
 
-        st.jump = isHeld(Action.JUMP);
-        st.boost = isHeld(Action.BOOST);
-        st.handbrake = isHeld(Action.POWERSLIDE);
+        st.jump = held[Action.JUMP.ordinal()];
+        st.boost = held[Action.BOOST.ordinal()]; // infinite boost is fuel-only (native refill)
+        st.handbrake = held[Action.POWERSLIDE.ordinal()];
         return st;
-    }
-
-    private boolean isHeld(Action a) {
-        return held[a.ordinal()];
     }
 
     public static String keyCodeLabel(int keyCode) {

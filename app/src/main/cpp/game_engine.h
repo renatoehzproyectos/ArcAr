@@ -56,6 +56,9 @@ public:
 
 	void ResetToKickoff();
 
+	void SetInfiniteBoost(bool on);
+	bool IsInfiniteBoost() const { return infiniteBoost_; }
+
 	// Advance simulation by dt seconds (accumulates and steps at arena tick rate)
 	void Update(float dtSeconds);
 
@@ -78,6 +81,7 @@ private:
 	CarControls pendingControls_{};
 	bool ballCam_ = true;
 	bool ready_ = false;
+	bool infiniteBoost_ = false;
 
 	float timeAccum_ = 0.f;
 	static constexpr float kFixedDt = 1.f / 120.f; // match default arena tick

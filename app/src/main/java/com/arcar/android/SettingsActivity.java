@@ -4,37 +4,31 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * Rebind UI for simulation controls only.
- * Each action has two slots (primary + secondary) so two keys can map to one action.
+ * Bind digital sim actions. One key may be shared across multiple actions
+ * (e.g. L2 → Decelerate + Air Roll Left).
+ * Steer/pitch/yaw = analogue sticks only.
  */
 public class SettingsActivity extends Activity {
 
     private InputMapper mapper;
     private Action waitingAction = null;
-    private int waitingSlot = 0;
     private TextView status;
     private final java.util.EnumMap<Action, TextView> labels = new java.util.EnumMap<>(Action.class);
 
-    /** Only simulation actions — no cam / reset / console. */
     private static final Action[] BINDABLE = {
             Action.ACCELERATE,
             Action.DECELERATE,
-            Action.STEER_LEFT,
-            Action.STEER_RIGHT,
-            Action.PITCH_UP,
-            Action.PITCH_DOWN,
-            Action.YAW_LEFT,
-            Action.YAW_RIGHT,
-            Action.AIR_ROLL_LEFT,
-            Action.AIR_ROLL_RIGHT,
             Action.JUMP,
             Action.BOOST,
-            Action.POWERSLIDE
+            Action.POWERSLIDE,
+            Action.AIR_ROLL_LEFT,
+            Action.AIR_ROLL_RIGHT
     };
 
     @Override
@@ -45,6 +39,24 @@ public class SettingsActivity extends Activity {
         mapper = new InputMapper(this);
         status = findViewById(R.id.status);
         LinearLayout list = findViewById(R.id.bind_list);
+
+        // Infinite boost toggle at top
+        CheckBox infBoost = new CheckBox(this);
+        infBoost.setText("Infinite boost");
+        infBoost.setTextColor(0xFFFFFFFF);
+        infBoost.setChecked(mapper.isInfiniteBoost());
+        infBoost.setOnCheckedChangeListener((b, checked) -> {
+            mapper.setInfiniteBoost(checked);
+            status.setText(checked ? "Infinite boost ON" : "Infinite boost OFF");
+        });
+        list.addView(infBoost);
+
+        TextView hint = new TextView(this);
+        hint.setText("\nSteer / pitch / yaw = left & right sticks only (no key binds).\n"
+                + "One key can be on several actions at once (e.g. L2 = brake + air roll left).\n");
+        hint.setTextColor(0xFFAAAAAA);
+        hint.setTextSize(13);
+        list.addView(hint);
 
         for (Action a : BINDABLE) {
             LinearLayout row = new LinearLayout(this);
@@ -65,25 +77,22 @@ public class SettingsActivity extends Activity {
             LinearLayout btns = new LinearLayout(this);
             btns.setOrientation(LinearLayout.HORIZONTAL);
 
-            Button b1 = new Button(this);
-            b1.setText("Bind 1");
-            b1.setOnClickListener(v -> startWait(a, InputMapper.SLOT_PRIMARY));
-
-            Button b2 = new Button(this);
-            b2.setText("Bind 2");
-            b2.setOnClickListener(v -> startWait(a, InputMapper.SLOT_SECONDARY));
+            Button add = new Button(this);
+            add.setText("Add key");
+            add.setOnClickListener(v -> {
+                waitingAction = a;
+                status.setText("Press a key to ADD to " + pretty(a) + "… (Back=cancel)");
+            });
 
             Button clear = new Button(this);
             clear.setText("Clear");
             clear.setOnClickListener(v -> {
-                mapper.clearBinding(a, InputMapper.SLOT_PRIMARY);
-                mapper.clearBinding(a, InputMapper.SLOT_SECONDARY);
+                mapper.clearBindings(a);
                 labels.get(a).setText(mapper.formatBindings(a));
                 status.setText(pretty(a) + " cleared");
             });
 
-            btns.addView(b1);
-            btns.addView(b2);
+            btns.addView(add);
             btns.addView(clear);
 
             row.addView(name);
@@ -94,6 +103,7 @@ public class SettingsActivity extends Activity {
 
         findViewById(R.id.btn_reset_defaults).setOnClickListener(v -> {
             mapper.resetBindings();
+            infBoost.setChecked(false);
             refreshLabels();
             status.setText("Defaults restored.");
             Toast.makeText(this, "Defaults restored", Toast.LENGTH_SHORT).show();
@@ -101,16 +111,8 @@ public class SettingsActivity extends Activity {
 
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
 
-        status.setText("Simulation binds only (no cam / reset / console).\n"
-                + "Use Bind 1 and Bind 2 for two keys per action.\n"
-                + "Sticks/triggers still work: LT/RT throttle, left stick steer/pitch.");
-    }
-
-    private void startWait(Action a, int slot) {
-        waitingAction = a;
-        waitingSlot = slot;
-        status.setText("Press a key for " + pretty(a)
-                + " (slot " + (slot + 1) + ")…  Back=cancel");
+        status.setText("Add key = append (does not remove from other actions).\n"
+                + "Same button on two actions = both fire together.");
     }
 
     private void refreshLabels() {
@@ -124,12 +126,6 @@ public class SettingsActivity extends Activity {
         switch (a) {
             case ACCELERATE: return "Accelerate";
             case DECELERATE: return "Decelerate / Reverse";
-            case STEER_LEFT: return "Steer Left";
-            case STEER_RIGHT: return "Steer Right";
-            case PITCH_UP: return "Pitch Up";
-            case PITCH_DOWN: return "Pitch Down";
-            case YAW_LEFT: return "Yaw Left";
-            case YAW_RIGHT: return "Yaw Right";
             case AIR_ROLL_LEFT: return "Air Roll Left";
             case AIR_ROLL_RIGHT: return "Air Roll Right";
             case POWERSLIDE: return "Powerslide";
@@ -144,14 +140,13 @@ public class SettingsActivity extends Activity {
         if (waitingAction != null) {
             if (keyCode == KeyEvent.KEYCODE_BACK) {
                 waitingAction = null;
-                status.setText("Bind cancelled.");
+                status.setText("Cancelled.");
                 return true;
             }
-            // Ignore pure modifiers as sole bind? allow them
-            mapper.setBinding(waitingAction, waitingSlot, keyCode);
+            mapper.addBinding(waitingAction, keyCode);
             labels.get(waitingAction).setText(mapper.formatBindings(waitingAction));
-            status.setText(pretty(waitingAction) + " slot " + (waitingSlot + 1)
-                    + " → " + InputMapper.keyCodeLabel(keyCode));
+            status.setText(pretty(waitingAction) + " += " + InputMapper.keyCodeLabel(keyCode)
+                    + "  (still on other actions if you added it there too)");
             waitingAction = null;
             return true;
         }

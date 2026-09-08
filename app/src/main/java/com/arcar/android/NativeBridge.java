@@ -66,6 +66,11 @@ public final class NativeBridge {
         nativeResetImpl();
     }
 
+    public static void nativeSetInfiniteBoost(boolean on) {
+        if (!loaded) return;
+        nativeSetInfiniteBoostImpl(on);
+    }
+
     public static void nativeUpdate(float dtSeconds) {
         if (!loaded) return;
         nativeUpdateImpl(dtSeconds);
@@ -85,6 +90,7 @@ public final class NativeBridge {
     private static native void nativeToggleBallCamImpl();
     private static native void nativeSetBallCamImpl(boolean on);
     private static native void nativeResetImpl();
+    private static native void nativeSetInfiniteBoostImpl(boolean on);
     private static native void nativeUpdateImpl(float dtSeconds);
     private static native boolean nativeGetSnapshotImpl(float[] out);
 }

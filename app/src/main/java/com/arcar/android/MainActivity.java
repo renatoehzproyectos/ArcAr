@@ -194,6 +194,10 @@ public class MainActivity extends Activity {
                 NativeBridge.nativeSetControls(
                         c.throttle, c.steer, c.pitch, c.yaw, c.roll,
                         c.jump, c.boost, c.handbrake);
+                if (renderer != null) {
+                    renderer.setSteerInput(c.steer);
+                    renderer.setHandbrakeInput(c.handbrake ? 1f : 0f);
+                }
             } catch (Throwable t) {
                 log("controls: " + t);
             }

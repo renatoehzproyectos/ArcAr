@@ -46,10 +46,18 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private final AssetStore assets = new AssetStore();
     private int meshProgram;
     private int mAPos, mANrm, mAUv, mUMVP, mUModel, mUColor, mULight, mUAmbient, mUEmissive, mUTex, mUUseTex;
+    private int mUCameraPos, mUEmissiveFactor, mUMetallic, mURoughness;
     private int spriteProgram;
     private int sAPos, sAUv, sUMVP, sUColor, sUTex;
     private FloatBuffer quadPN; // pos3+uv2 for billboards
+    private FloatBuffer flatQuadPN; // pos3+nrm3 unit quad, for field surface/markings (Fix #5)
+    private FloatBuffer centerRingPN; // pos3+nrm3 real center-circle ring mesh (Fix #6)
+    private int centerRingVerts;
+    private FloatBuffer cornerWallPN; // pos3+nrm3 quarter-cylinder corner fillet (Fix #8)
+    private int cornerWallVerts;
     private String pendingCarId = "octane";
+    private CarCatalog.VisualTransform currentCarVisual = CarCatalog.find("octane").visual;
+    private final float[] currentCameraPos = new float[3];
 
     // Trail / particles (pooled)
     private static final int TRAIL = 64;
@@ -66,6 +74,11 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private int pCount;
 
     private float wheelAngle;
+    private int shadowTexId = 0;
+    private volatile float steerInput = 0f;
+    public void setSteerInput(float s) { steerInput = s; }
+    private volatile float handbrakeInput = 0f;
+    public void setHandbrakeInput(float h) { handbrakeInput = h; }
     private float goalFlash;
     private float impactFlash;
     private float ballTrailAcc;
@@ -73,6 +86,18 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private int bTrailN, bTrailH;
 
     private float smoothFov = 70f;
+    // Fix #28 / #51 / #52 — game-feel state
+    private boolean wasOnGround = true;
+    private float landShake = 0f;
+    private float impactShake = 0f;
+    private float goalShake = 0f;
+    private float boostShake = 0f;
+    private float superStreak = 0f;
+    // Fix #36 prealloc
+    private final float[] corrM = new float[16];
+    private final float[] offsetM = new float[16];
+    private final float[] orientedM = new float[16];
+    private final float[] snapCopy = new float[40];
 
     public void setEngineReady(boolean ready) { engineReady = ready; }
 
@@ -143,8 +168,16 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         cubePN = buildCubePN();
         spherePN = buildSpherePN(16, 24);
         quadPN = buildQuad();
+        flatQuadPN = buildFlatQuadPN();
+        centerRingVerts = 0; // built lazily below with actual field dimensions
+        centerRingPN = buildRingPN(920f, 55f, 48);
+        centerRingVerts = 48 * 6;
+        cornerWallPN = buildCurvedWallPN(650f, 2200f, 10);
+        cornerWallVerts = 10 * 6 * 2; // double-sided
 
-        // Textured mesh shader
+        // Textured mesh shader — PBR-lite (Fix #14 / #16): metallic/roughness response,
+        // a cheap Fresnel rim term, plus Reinhard tone mapping + gamma correction so the
+        // vehicle no longer looks flat/too dark under the single directional light.
         String mvs =
             "uniform mat4 uMVP;\n" +
             "uniform mat4 uModel;\n" +
@@ -153,30 +186,55 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             "attribute vec2 aUv;\n" +
             "varying vec3 vN;\n" +
             "varying vec2 vUv;\n" +
+            "varying vec3 vWorldPos;\n" +
             "void main(){\n" +
             "  vN = mat3(uModel) * aNrm;\n" +
             "  vUv = aUv;\n" +
+            "  vWorldPos = (uModel * vec4(aPos,1.0)).xyz;\n" +
             "  gl_Position = uMVP * vec4(aPos,1.0);\n" +
             "}\n";
         String mfs =
             "precision mediump float;\n" +
             "varying vec3 vN;\n" +
             "varying vec2 vUv;\n" +
+            "varying vec3 vWorldPos;\n" +
             "uniform vec4 uColor;\n" +
             "uniform vec3 uLightDir;\n" +
+            "uniform vec3 uCameraPos;\n" +
             "uniform float uAmbient;\n" +
             "uniform float uEmissive;\n" +
+            "uniform vec3 uEmissiveFactor;\n" +
+            "uniform float uMetallic;\n" +
+            "uniform float uRoughness;\n" +
             "uniform sampler2D uTex;\n" +
             "uniform float uUseTex;\n" +
             "void main(){\n" +
             "  vec3 n = normalize(vN);\n" +
-            "  float ndl = max(dot(n, normalize(uLightDir)), 0.0);\n" +
-            "  float light = uAmbient + (1.0 - uAmbient) * ndl;\n" +
+            "  vec3 l = normalize(uLightDir);\n" +
+            "  vec3 v = normalize(uCameraPos - vWorldPos);\n" +
+            "  vec3 h = normalize(l + v);\n" +
+            "  float ndl = max(dot(n, l), 0.0);\n" +
+            "  float ndv = max(dot(n, v), 0.0);\n" +
+            "  float ndh = max(dot(n, h), 0.0);\n" +
+            // Roughness -> a crude specular lobe exponent (rougher = broader/dimmer highlight).
+            "  float shininess = mix(128.0, 4.0, uRoughness);\n" +
+            "  float specStrength = mix(0.06, 0.9, uMetallic);\n" +
+            "  float spec = pow(ndh, shininess) * specStrength;\n" +
+            // Simplified Fresnel-Schlick rim, stronger on metals.
+            "  float fresnel = pow(1.0 - ndv, 5.0);\n" +
+            "  float fresnelStrength = mix(0.04, 0.6, uMetallic);\n" +
             "  vec4 texC = (uUseTex > 0.5) ? texture2D(uTex, vUv) : vec4(1.0);\n" +
-            "  vec3 albedo = (uUseTex > 0.5) ? texC.rgb : uColor.rgb;\n" +
-            "  if (uUseTex > 0.5 && length(uColor.rgb) > 0.05) albedo *= max(uColor.rgb, vec3(0.25));\n" +
-            "  vec3 col = albedo * light + albedo * uEmissive;\n" +
-            "  gl_FragColor = vec4(col, uColor.a * texC.a);\n" +
+            "  vec3 baseCol = uColor.rgb * texC.rgb;\n" +
+            // Metals tint their specular/fresnel with base color instead of white.
+            "  vec3 specCol = mix(vec3(1.0), baseCol, uMetallic);\n" +
+            "  float diffuseAmt = (1.0 - uMetallic);\n" +
+            "  vec3 diffuse = baseCol * diffuseAmt * (uAmbient + (1.0 - uAmbient) * ndl);\n" +
+            "  vec3 color = diffuse + specCol * spec + specCol * fresnel * fresnelStrength;\n" +
+            "  color += (baseCol * uEmissive) + uEmissiveFactor;\n" +
+            // Tone mapping (Reinhard) + gamma correction.
+            "  color = color / (color + vec3(1.0));\n" +
+            "  color = pow(color, vec3(1.0/2.2));\n" +
+            "  gl_FragColor = vec4(color, uColor.a * texC.a);\n" +
             "}\n";
         meshProgram = link(mvs, mfs);
         mAPos = GLES20.glGetAttribLocation(meshProgram, "aPos");
@@ -190,6 +248,10 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         mUEmissive = GLES20.glGetUniformLocation(meshProgram, "uEmissive");
         mUTex = GLES20.glGetUniformLocation(meshProgram, "uTex");
         mUUseTex = GLES20.glGetUniformLocation(meshProgram, "uUseTex");
+        mUCameraPos = GLES20.glGetUniformLocation(meshProgram, "uCameraPos");
+        mUEmissiveFactor = GLES20.glGetUniformLocation(meshProgram, "uEmissiveFactor");
+        mUMetallic = GLES20.glGetUniformLocation(meshProgram, "uMetallic");
+        mURoughness = GLES20.glGetUniformLocation(meshProgram, "uRoughness");
 
         // Sprite/billboard shader
         String svs =
@@ -216,6 +278,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
         if (appCtx != null) {
             assets.loadAll(appCtx, pendingCarId);
+            currentCarVisual = CarCatalog.find(pendingCarId).visual;
         }
     }
 
@@ -240,15 +303,15 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
         try {
             NativeBridge.nativeUpdate(dt);
-            float[] local = new float[40];
-            NativeBridge.nativeGetSnapshot(local);
-            updateSnapshot(local);
+            NativeBridge.nativeGetSnapshot(snapCopy);
+            updateSnapshot(snapCopy);
         } catch (Throwable t) {
             GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
             return;
         }
 
-        final float[] S = new float[40];
+        // Fix #36: reuse snapCopy
+        final float[] S = snapCopy;
         synchronized (snapLock) { System.arraycopy(snapshot, 0, S, 0, 40); }
         if (S[29] < 0.5f) return;
 
@@ -258,6 +321,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         float rx=S[9],ry=S[10],rz=S[11];
         float bx=S[12],by=S[13],bz=S[14], br=S[15]>1?S[15]:91.25f;
         float camx=S[16],camy=S[17],camz=S[18];
+        currentCameraPos[0]=camx; currentCameraPos[1]=camy; currentCameraPos[2]=camz;
         float tx=S[19],ty=S[20],tz=S[21];
         float boost=S[22], speed=S[23];
         boolean ballCam=S[24]>0.5f, onGround=S[25]>0.5f, boosting=S[26]>0.5f, isSuper=S[27]>0.5f;
@@ -266,26 +330,56 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         boolean goal = S[34] > 0.5f;
         float cvx=S[35],cvy=S[36],cvz=S[37];
         float ballSp = S[32];
+        float nativeShake = S[31];
 
         if (hudListener != null) hudListener.onHud(boost, speed, ballCam, true, boosting, goal);
+
+        float spd = (float)Math.sqrt(cvx*cvx+cvy*cvy+cvz*cvz);
 
         // Effects state
         if (impact > 300f) {
             spawnImpact(bx, by, bz, impact);
             impactFlash = Math.min(1f, impactFlash + impact / 2500f);
+            impactShake = Math.min(1f, impactShake + impact / 2200f); // Fix #28
         }
         if (goal) {
             goalFlash = 1f;
+            goalShake = 1f;
             spawnGoal(bx, by, bz);
         }
         goalFlash = Math.max(0f, goalFlash - dt * 0.7f);
         impactFlash = Math.max(0f, impactFlash - dt * 2.5f);
 
+        // Fix #52 Landing effect: airborne -> grounded edge
+        if (onGround && !wasOnGround && cz < 80f) {
+            spawnLanding(cx, cy, 5f);
+            landShake = 0.55f;
+        }
+        wasOnGround = onGround;
+
+        // Fix #51 Tire skid when powersliding on ground with lateral speed
+        float lat = Math.abs(cvx*rx + cvy*ry + cvz*rz);
+        if (onGround && handbrakeInput > 0.4f && lat > 400f && spd > 500f) {
+            spawnSkid(cx - fx*30f + rx*28f, cy - fy*30f + ry*28f, 4f);
+            spawnSkid(cx - fx*30f - rx*28f, cy - fy*30f - ry*28f, 4f);
+        }
+
+        // Fix #20 Supersonic streak intensity
+        if (isSuper) superStreak = Math.min(1f, superStreak + dt * 3f);
+        else superStreak = Math.max(0f, superStreak - dt * 2f);
+
+        // Fix #28 decay shakes
+        landShake = Math.max(0f, landShake - dt * 3.5f);
+        impactShake = Math.max(0f, impactShake - dt * 4f);
+        goalShake = Math.max(0f, goalShake - dt * 1.8f);
+        if (boosting) boostShake = Math.min(0.25f, boostShake + dt * 0.8f);
+        else boostShake = Math.max(0f, boostShake - dt * 2f);
+
         updateParticles(dt);
-        updateBoostTrail(dt, boosting, cx - fx*45f, cy - fy*45f, cz - fz*15f + ux*5f);
-        if (ballSp > 1800f) {
+        updateBoostTrail(dt, boosting || isSuper, cx - fx*45f, cy - fy*45f, cz - fz*15f + ux*5f);
+        if (ballSp > 1500f) {
             ballTrailAcc += dt;
-            if (ballTrailAcc > 0.03f) {
+            if (ballTrailAcc > 0.025f) {
                 ballTrailAcc = 0;
                 bTrailX[bTrailH]=bx; bTrailY[bTrailH]=by; bTrailZ[bTrailH]=bz;
                 bTrailH = (bTrailH+1)%24;
@@ -295,14 +389,24 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             ballTrailAcc = 0; bTrailN--;
         }
 
-        float spd = (float)Math.sqrt(cvx*cvx+cvy*cvy+cvz*cvz);
         wheelAngle += (spd * 0.02f) * dt * 60f;
 
-        // FOV
-        smoothFov += (fov - smoothFov) * 0.12f;
+        // FOV Fix #26: speed + boost + supersonic
+        float targetFov = fov < 1f ? 70f : fov;
+        targetFov += Math.min(12f, spd / 180f);
+        if (boosting) targetFov += 4f;
+        if (isSuper) targetFov += 3f;
+        smoothFov += (targetFov - smoothFov) * 0.12f;
+
+        // Camera shake (Fix #28) — apply small offsets to look-at
+        float totalShake = Math.min(1.2f, landShake + impactShake + goalShake * 0.7f + boostShake + nativeShake * 0.01f);
+        float shx = (rng.nextFloat() - 0.5f) * totalShake * 18f;
+        float shy = (rng.nextFloat() - 0.5f) * totalShake * 18f;
+        float shz = (rng.nextFloat() - 0.5f) * totalShake * 10f;
+
         float aspect = (float) width / Math.max(1, height);
         Matrix.perspectiveM(proj, 0, smoothFov, aspect, 6f, 30000f);
-        Matrix.setLookAtM(view, 0, camx, camy, camz, tx, ty, tz, 0, 0, 1);
+        Matrix.setLookAtM(view, 0, camx+shx, camy+shy, camz+shz, tx, ty, tz, 0, 0, 1);
 
         // Clear — stadium night sky + goal flash
         float flash = goalFlash * 0.35f + impactFlash * 0.15f;
@@ -312,6 +416,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                 pendingCarId = want;
                 assets.loadAll(appCtx, want);
             }
+            currentCarVisual = CarCatalog.find(want).visual;
         }
 
         GLES20.glClearColor(0.07f+flash, 0.08f+flash*0.5f, 0.12f+flash*0.2f, 1f);
@@ -320,43 +425,36 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         GLES20.glUniform3f(uLightDir, lightDir[0], lightDir[1], lightDir[2]);
 
         drawStadium();
-        if (assets.arena == null) drawBoostPads();
+        drawBoostPads();
         drawBallTrail();
         drawBoostTrail();
         drawParticles();
         drawBall(bx, by, bz, br, ballSp);
         drawCar(cx,cy,cz, fx,fy,fz, ux,uy,uz, rx,ry,rz, boosting, isSuper, onGround, spd);
-        // Ground shadow blobs
-        drawShadow(cx, cy, 2f, 90f, 110f);
-        drawShadow(bx, by, 2f, br*0.9f, br*0.9f);
+        // Ground shadow blobs — Fix #11/#12: soft circular texture-based shadows,
+        // sized/faded by height, instead of a fixed black rectangular box.
+        drawGroundShadow(cx, cy, cz, 95f, 900f);
+        drawGroundShadow(bx, by, bz, br*1.1f, 900f);
     }
 
     // ========== STADIUM ==========
     private void drawStadium() {
-        if (assets.arena != null && !assets.arena.primitives.isEmpty()) {
-            // Champions Field GLB already scaled to 8192 x 10240 x ~2048
-            drawGlbUniformScale(assets.arena, 0, 0, 0, 1f, 1f, 1f, 1f, 0.02f);
-            return;
-        }
-        // Fallback procedural stadium
-        litBox(0,0,-2, 8200,10300,4, 0.12f,0.42f,0.18f, 1f, 0.55f, 0f);
+        // Turf base — Fix #5: a real flat surface quad instead of a 4-unit-thick box.
+        litFlatQuad(0,0,-2, 8200,10300, 0.12f,0.42f,0.18f, 1f, 0.55f, 0f);
         // Lighter turf stripes
         for (int i = -5; i <= 5; i++) {
             float yy = i * 900f;
-            litBox(0, yy, 0.5f, 8000, 400, 1.5f, 0.14f,0.48f,0.20f, 1f, 0.55f, 0f);
+            litFlatQuad(0, yy, -0.5f, 8000, 400, 0.14f,0.48f,0.20f, 1f, 0.55f, 0f);
         }
-        // Lines (emissive white)
-        litBox(0,0,2, 35,10240, 2, 0.95f,0.95f,0.9f, 1f, 0.7f, 0.15f);
-        litBox(-4090,0,2, 25,10240, 2, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
-        litBox(4090,0,2, 25,10240, 2, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
-        litBox(0,-5120,2, 8192, 25, 2, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
-        litBox(0,5120,2, 8192, 25, 2, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
-        // Center circle
-        for (int i=0;i<32;i++) {
-            float a=(float)(i*Math.PI*2/32);
-            litBox((float)Math.cos(a)*920, (float)Math.sin(a)*920, 2.5f, 55,55,2, 0.95f,0.95f,0.9f,1f,0.7f,0.12f);
-        }
-        litBox(0,0,3, 100,100,3, 0.95f,0.95f,0.9f,1f,0.7f,0.12f);
+        // Lines (emissive white) — flat decals, offset slightly above the turf (Fix #42).
+        litFlatQuad(0,0,0.5f, 35,10240, 0.95f,0.95f,0.9f, 1f, 0.7f, 0.15f);
+        litFlatQuad(-4090,0,0.5f, 25,10240, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
+        litFlatQuad(4090,0,0.5f, 25,10240, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
+        litFlatQuad(0,-5120,0.5f, 8192, 25, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
+        litFlatQuad(0,5120,0.5f, 8192, 25, 0.9f,0.9f,0.85f, 1f, 0.7f, 0.1f);
+        // Center circle — Fix #6: a real generated ring mesh instead of 32 boxes.
+        litCenterRing(0,0,0.6f, 0.95f,0.95f,0.9f,1f,0.7f,0.12f);
+        litFlatQuad(0,0,0.7f, 100,100, 0.95f,0.95f,0.9f,1f,0.7f,0.12f);
 
         // Side walls — translucent-ish darker
         litBox(-4110,0,1100, 60,10400,2200, 0.18f,0.22f,0.32f, 0.92f, 0.45f, 0.05f);
@@ -364,6 +462,12 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         // Team ends
         litBox(0,-5240,1100, 8300,80,2200, 0.12f,0.22f,0.55f, 1f, 0.4f, 0.08f);
         litBox(0,5240,1100, 8300,80,2200, 0.55f,0.22f,0.12f, 1f, 0.4f, 0.08f);
+        // Corner fillets — Fix #8: smooth curved transition between side walls and
+        // end walls instead of the walls meeting in a hard rectangular corner.
+        litCornerWall(4110-650, -5240+650, 180f, 0.18f,0.22f,0.32f, 0.92f, 0.45f, 0.05f);
+        litCornerWall(4110-650, 5240-650, 90f, 0.18f,0.22f,0.32f, 0.92f, 0.45f, 0.05f);
+        litCornerWall(-4110+650, -5240+650, 270f, 0.18f,0.22f,0.32f, 0.92f, 0.45f, 0.05f);
+        litCornerWall(-4110+650, 5240-650, 0f, 0.18f,0.22f,0.32f, 0.92f, 0.45f, 0.05f);
         // Ceiling girders feel
         litBox(0,0,2100, 8400,10500,40, 0.1f,0.11f,0.14f, 1f, 0.35f, 0f);
         for (int i=-4;i<=4;i++) {
@@ -385,15 +489,114 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         litBox(5000, 0, 400, 400, 11000, 800, 0.12f,0.13f,0.18f, 1f, 0.35f, 0f);
     }
 
+    /**
+     * Fix #9: an actual low-poly net lattice (thin alpha-blended strings on the back
+     * panel and two side panels) instead of one solid translucent box, which used to
+     * read as a flat colored wall rather than a net you can see through.
+     */
+    private void drawNet(float x, float y, float zBase, float halfW, float heightTop, float depth,
+                         float r, float g, float b) {
+        int strands = 9;
+        float strandThickness = 6f;
+        float netAlpha = 0.5f;
+        // Back panel (in the XZ plane, facing along Y)
+        float backY = y + depth;
+        for (int i = 0; i <= strands; i++) {
+            float fx = x - halfW + (2f*halfW) * i / strands;
+            litBox(fx, backY, (zBase+heightTop)*0.5f, strandThickness, 20f, heightTop-zBase,
+                    r,g,b, netAlpha, 0.4f, 0.08f);
+        }
+        int rows = 6;
+        for (int i = 0; i <= rows; i++) {
+            float fz = zBase + (heightTop-zBase) * i / rows;
+            litBox(x, backY, fz, halfW*2f, 20f, strandThickness,
+                    r,g,b, netAlpha, 0.4f, 0.08f);
+        }
+        // Side panels (in the YZ plane, taper from the goal mouth back to the back panel)
+        for (int side = -1; side <= 1; side += 2) {
+            float sx = x + side * halfW;
+            for (int i = 0; i <= 5; i++) {
+                float fy = y + depth * i / 5f;
+                litBox(sx, fy, (zBase+heightTop)*0.5f, strandThickness, 20f, heightTop-zBase,
+                        r,g,b, netAlpha, 0.4f, 0.08f);
+            }
+            for (int i = 0; i <= rows; i++) {
+                float fz = zBase + (heightTop-zBase) * i / rows;
+                litBox(sx, y+depth*0.5f, fz, 20f, depth, strandThickness,
+                        r,g,b, netAlpha, 0.4f, 0.08f);
+            }
+        }
+    }
+
+    /**
+     * Fix #18: proper layered boost exhaust — nozzle glow, white-hot core, orange
+     * outer flame, a soft glow halo, trailing smoke wisps, and a few sparks —
+     * instead of 1–3 flat billboards. `power` is 0..1 (ramps with speed/boost).
+     */
+    private void drawBoostFlame(float ex, float ey, float ez,
+                                float fx, float fy, float fz,
+                                float ux, float uy, float uz,
+                                float rx, float ry, float rz, float power) {
+        long t = System.nanoTime();
+        float flick = 0.75f + 0.25f * (float)Math.sin(t * 1.4e-7);
+        float flick2 = 0.8f + 0.2f * (float)Math.sin(t * 2.3e-7 + 1.7f);
+
+        // 1) Nozzle glow — small bright disc right at the exhaust port.
+        int flare = assets.tex("textures/particles/flare_01.png");
+        if (flare != 0) drawBillboard(ex, ey, ez, 34f * flick, flare, 1f, 1f, 0.85f, 0.9f);
+
+        // 2) White-hot core — short, tight, right behind the nozzle.
+        int flameCore = assets.tex("textures/particles/flame_01.png");
+        if (flameCore != 0) {
+            drawBillboard(ex - fx*10, ey - fy*10, ez - fz*10, 30f * flick,
+                    flameCore, 1f, 1f, 0.9f, 0.95f);
+        }
+
+        // 3) Outer flame — longer, orange, extends further back, scales with power.
+        int flameOuter = assets.tex("textures/particles/flame_03.png");
+        if (flameOuter != 0) {
+            drawBillboard(ex - fx*30, ey - fy*30, ez - fz*30, (55f + 25f*power) * flick,
+                    flameOuter, 1f, 0.65f, 0.25f, 0.85f);
+            drawBillboard(ex - fx*55, ey - fy*55, ez - fz*55, (40f + 20f*power) * flick2,
+                    assets.tex("textures/particles/flame_05.png"), 1f, 0.5f, 0.15f, 0.6f * power + 0.3f);
+        } else {
+            ori(ex,ey,ez, fx,fy,fz,ux,uy,uz,rx,ry,rz, 22, 55f*flick, 18, 1f,0.45f,0.05f,0.95f,0.5f,0.95f);
+        }
+
+        // 4) Soft glow halo around the whole plume, additive-feeling via low alpha.
+        if (flare != 0) {
+            drawBillboard(ex - fx*25, ey - fy*25, ez - fz*25, 90f + 30f*power,
+                    flare, 1f, 0.55f, 0.2f, 0.22f);
+        }
+
+        // 5) Smoke wisps trailing off the back of the flame, faint and cool-toned.
+        int smoke = assets.tex("textures/smoke/blackSmoke05.png");
+        if (smoke != 0) {
+            float sOff = 70f + 20f*(float)Math.sin(t*0.9e-7);
+            drawBillboard(ex - fx*sOff, ey - fy*sOff, ez - fz*sOff + 6f, 45f, smoke, 0.5f, 0.5f, 0.55f, 0.18f);
+        }
+
+        // 6) A couple of stray sparks kicked off the flame edge.
+        int spark = assets.tex("textures/particles/spark_02.png");
+        if (spark != 0) {
+            float jitter1 = (float)Math.sin(t*3.1e-7) * 14f;
+            float jitter2 = (float)Math.cos(t*2.7e-7) * 14f;
+            drawBillboard(ex - fx*40 + rx*jitter1, ey - fy*40 + ry*jitter1, ez - fz*40 + uz*4f,
+                    10f, spark, 1f, 0.85f, 0.4f, 0.8f);
+            drawBillboard(ex - fx*20 + rx*jitter2, ey - fy*20 + ry*jitter2, ez - fz*20 - uz*3f,
+                    8f, spark, 1f, 0.9f, 0.5f, 0.7f);
+        }
+    }
+
     private void drawGoal(float x, float y, boolean blue) {
         float r=blue?0.25f:0.95f, g=blue?0.45f:0.4f, b=blue?1f:0.2f;
         // Posts + bar
         litBox(x-460,y,320, 35,35,640, r,g,b,1f,0.5f,0.25f);
         litBox(x+460,y,320, 35,35,640, r,g,b,1f,0.5f,0.25f);
         litBox(x,y,640, 960,35,35, r,g,b,1f,0.5f,0.25f);
-        // Net volume
+        // Net — Fix #9: real lattice instead of one translucent box "wall".
         float depth = blue ? -220 : 220;
-        litBox(x, y+depth, 300, 880, 400, 600, r*0.35f, g*0.35f, b*0.35f, 0.45f, 0.4f, 0.05f);
+        drawNet(x, y, 0f, 440f, 620f, depth, r, g, b);
         // Goal mouth floor mark
         litBox(x, y+(blue?-80:80), 3, 900, 60, 2, 0.95f,0.95f,0.9f,1f,0.7f,0.1f);
         if (goalFlash > 0.05f) {
@@ -401,17 +604,22 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         }
     }
 
+    /** Fix #53: pad base + emissive ring + glow (big vs small distinct). */
     private void drawBoostPads() {
+        int flare = assets.tex("textures/particles/flare_01.png");
         float[][] big = {{-3072,-4096},{3072,-4096},{-3072,4096},{3072,4096},{-3584,0},{3584,0}};
         for (float[] p : big) {
-            litBox(p[0],p[1],6, 210,210,10, 0.15f,0.12f,0.05f,1f,0.4f,0f);
-            litBox(p[0],p[1],14, 160,160,12, 1f,0.7f,0.12f,1f,0.5f,0.55f);
-            litBox(p[0],p[1],22, 80,80,8, 1f,0.9f,0.4f,1f,0.5f,0.9f);
+            litBox(p[0],p[1],4, 220,220,8, 0.12f,0.1f,0.04f,1f,0.35f,0f);
+            litBox(p[0],p[1],10, 180,180,6, 1f,0.65f,0.1f,1f,0.45f,0.35f); // ring
+            litBox(p[0],p[1],16, 90,90,10, 1f,0.9f,0.35f,1f,0.5f,0.95f); // core
+            if (flare != 0) drawBillboard(p[0], p[1], 28f, 140f, flare, 1f,0.75f,0.2f, 0.35f);
         }
         float[] ys = {-2480,-1024,1024,2480};
         for (float sy : ys) {
             for (float sx : new float[]{-1780,1780}) {
-                litBox(sx,sy,5, 95,95,8, 1f,0.65f,0.15f,1f,0.5f,0.4f);
+                litBox(sx,sy,3, 100,100,6, 0.15f,0.12f,0.05f,1f,0.4f,0f);
+                litBox(sx,sy,8, 70,70,6, 1f,0.7f,0.2f,1f,0.5f,0.7f);
+                if (flare != 0) drawBillboard(sx, sy, 18f, 70f, flare, 1f,0.8f,0.25f, 0.25f);
             }
         }
     }
@@ -422,20 +630,16 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                          boolean boosting, boolean isSuper, boolean onGround, float speed) {
         if (assets.car != null && !assets.car.primitives.isEmpty()) {
             drawGlb(assets.car, x, y, z, fx, fy, fz, ux, uy, uz, rx, ry, rz,
-                    isSuper ? 1.15f : 1f, isSuper ? 0.25f : 0.05f);
-            // Boost exhaust still using particles/sprites
+                    isSuper ? 1.15f : 1f, isSuper ? 0.25f : 0.05f, currentCarVisual);
+            // Boost exhaust — Fix #18: layered nozzle/core/outer/glow/smoke/sparks.
             float ex=x-fx*55, ey=y-fy*55, ez=z-fz*55;
-            if (boosting) {
-                float flick = 0.7f + 0.3f*(float)Math.sin(System.nanoTime()*1.2e-7);
-                int flame = assets.tex("textures/particles/flame_03.png");
-                if (flame != 0) {
-                    drawBillboard(ex, ey, ez, 70f*flick, flame, 1f, 0.7f, 0.3f, 0.95f);
-                    drawBillboard(ex-fx*35, ey-fy*35, ez-fz*35, 45f*flick,
-                            assets.tex("textures/particles/flame_05.png"), 1f, 0.9f, 0.5f, 0.8f);
-                } else {
-                    ori(ex,ey,ez, fx,fy,fz,ux,uy,uz,rx,ry,rz, 22, 55*flick, 18, 1f,0.45f,0.05f,0.95f,0.5f,0.95f);
-                }
+            if (boosting || isSuper) {
+                float power = 0.7f + Math.min(speed/2300f,1f)*0.5f + (isSuper?0.25f:0f);
+                drawBoostFlame(ex, ey, ez, fx, fy, fz, ux, uy, uz, rx, ry, rz, power);
             }
+            // Fix #20 supersonic streaks
+            if (isSuper || superStreak > 0.05f)
+                drawSupersonicStreaks(x,y,z, fx,fy,fz, rx,ry,rz, ux,uy,uz);
             return;
         }
         float br=isSuper?0.4f:0.18f, bg=isSuper?0.6f:0.48f, bb=isSuper?1f:0.95f;
@@ -458,34 +662,47 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         ori(x-fx*55+rx*28+ux*12, y-fy*55+ry*28+uy*12, z-fz*55+rz*28+uz*12, fx,fy,fz,ux,uy,uz,rx,ry,rz, 8,5,5, 1f,0.15f,0.1f,1f,0.5f,0.7f);
         ori(x-fx*55-rx*28+ux*12, y-fy*55-ry*28+uy*12, z-fz*55-rz*28+uz*12, fx,fy,fz,ux,uy,uz,rx,ry,rz, 8,5,5, 1f,0.15f,0.1f,1f,0.5f,0.7f);
 
-        // Wheels
-        float[][] wl = {{42,30,-10},{42,-30,-10},{-38,30,-10},{-38,-30,-10}};
+        // Wheels (Fix #47): front wheels now yaw with steer input, and all four wheels
+        // spin around their axle with wheelAngle — previously wheelAngle was computed
+        // but never applied, so wheels never visually turned or rolled.
+        // wl entries: {forwardOffset, rightOffset, upOffset, isFrontWheel}
+        float[][] wl = {{42,30,-10,1},{42,-30,-10,1},{-38,30,-10,0},{-38,-30,-10,0}};
+        float steerRad = steerInput * 0.35f; // clamp visual steer angle (~20 deg max)
         for (float[] w : wl) {
             float wx=x+fx*w[0]+rx*w[1]+ux*w[2];
             float wy=y+fy*w[0]+ry*w[1]+uy*w[2];
             float wz=z+fz*w[0]+rz*w[1]+uz*w[2];
-            ori(wx,wy,wz, fx,fy,fz,ux,uy,uz,rx,ry,rz, 12,20,12, 0.08f,0.08f,0.08f,1f,0.3f,0f);
-            ori(wx,wy,wz, fx,fy,fz,ux,uy,uz,rx,ry,rz, 6,14,6, 0.4f,0.4f,0.45f,1f,0.5f,0.1f);
+            boolean front = w[3] > 0.5f;
+            float yaw = front ? steerRad : 0f;
+            // Yaw the wheel's local forward/right around the car's up axis for steering.
+            float cy = (float)Math.cos(yaw), sy = (float)Math.sin(yaw);
+            float wfx = fx*cy + rx*sy, wfy = fy*cy + ry*sy, wfz = fz*cy + rz*sy;
+            float wrx = rx*cy - fx*sy, wry = ry*cy - fy*sy, wrz = rz*cy - fz*sy;
+            // Roll the wheel around its own axle (the right/lateral axis) for rolling motion.
+            float cr = (float)Math.cos(wheelAngle), sr = (float)Math.sin(wheelAngle);
+            float wux = ux*cr - wfx*sr, wuy = uy*cr - wfy*sr, wuz = uz*cr - wfz*sr;
+            float wfx2 = wfx*cr + ux*sr, wfy2 = wfy*cr + uy*sr, wfz2 = wfz*cr + uz*sr;
+            ori(wx,wy,wz, wfx2,wfy2,wfz2, wux,wuy,wuz, wrx,wry,wrz, 12,20,12, 0.08f,0.08f,0.08f,1f,0.3f,0f);
+            ori(wx,wy,wz, wfx2,wfy2,wfz2, wux,wuy,wuz, wrx,wry,wrz, 6,14,6, 0.4f,0.4f,0.45f,1f,0.5f,0.1f);
         }
 
-        // Boost exhaust
+        // Boost exhaust — Fix #18: layered nozzle/core/outer/glow/smoke/sparks.
         float ex=x-fx*58, ey=y-fy*58, ez=z-fz*58;
-        if (boosting) {
-            float flick = 0.65f + 0.35f*(float)Math.sin(System.nanoTime()*1.2e-7);
-            float power = 0.7f + Math.min(speed/2300f,1f)*0.5f;
-            ori(ex,ey,ez, fx,fy,fz,ux,uy,uz,rx,ry,rz, 22, 55*flick*power, 18, 1f,0.45f,0.05f,0.95f,0.5f,0.95f);
-            ori(ex-fx*30,ey-fy*30,ez-fz*30, fx,fy,fz,ux,uy,uz,rx,ry,rz, 14, 40*flick*power, 12, 1f,0.8f,0.25f,0.8f,0.5f,1f);
-            ori(ex-fx*55,ey-fy*55,ez-fz*55, fx,fy,fz,ux,uy,uz,rx,ry,rz, 8, 25*flick, 8, 1f,1f,0.7f,0.6f,0.5f,1f);
+        if (boosting || isSuper) {
+            float power = 0.7f + Math.min(speed/2300f,1f)*0.5f + (isSuper?0.25f:0f);
+            drawBoostFlame(ex, ey, ez, fx, fy, fz, ux, uy, uz, rx, ry, rz, power);
         } else {
             ori(ex,ey,ez, fx,fy,fz,ux,uy,uz,rx,ry,rz, 16,14,12, 0.2f,0.2f,0.25f,1f,0.4f,0f);
         }
+        if (isSuper || superStreak > 0.05f)
+            drawSupersonicStreaks(x,y,z, fx,fy,fz, rx,ry,rz, ux,uy,uz);
     }
 
     private void drawBall(float x,float y,float z,float r, float speed) {
         if (assets.ball != null && !assets.ball.primitives.isEmpty()) {
             // Ball model is unit-ish; scale so radius matches physics
             float s = (r * 2f) / Math.max(1f, assets.ball.radius * 2f);
-            drawGlbUniformScale(assets.ball, x, y, z, s, 1f, 1f, 1f, 0.35f);
+            drawGlbUniformScale(assets.ball, x, y, z, s, 1f, 1f, 1f, 0.08f);
             if (speed > 1500f) {
                 float a = Math.min((speed-1500f)/3000f, 0.45f);
                 int glow = assets.tex("textures/particles/flare_01.png");
@@ -501,20 +718,87 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         }
     }
 
-    private void drawShadow(float x, float y, float z, float sx, float sy) {
-        litBox(x,y,z, sx*2, sy*2, 1.5f, 0f,0f,0f, 0.35f, 1f, 0f);
+    /**
+     * Fix #11 / #12: soft circular ground shadow (billboarded flat on the XY plane,
+     * alpha-blended, using the circle_0x particle textures) replacing the old
+     * `litBox(...)` black rectangular shadow. Size/opacity shrink with height so it
+     * reads as "car/ball lifting off the ground" instead of a fixed dark box.
+     */
+    private void drawGroundShadow(float x, float y, float height, float baseRadius, float maxHeight) {
+        int tex = shadowTexId != 0 ? shadowTexId : assets.tex("textures/particles/circle_01.png");
+        if (tex == 0) tex = assets.tex("textures/particles/circle_05.png");
+        shadowTexId = tex;
+        if (tex == 0) return; // no shadow texture available — skip rather than draw a box
+        float t = Math.min(Math.max(height, 0f) / Math.max(1f, maxHeight), 1f);
+        float size = baseRadius * (1f - t * 0.45f); // shrinks a bit as it rises
+        float alpha = 0.45f * (1f - t * 0.75f);     // dims as it rises
+        if (alpha <= 0.02f) return;
+
+        Matrix.setIdentityM(model, 0);
+        model[0] = size; model[1] = 0; model[2] = 0;
+        model[4] = 0; model[5] = size; model[6] = 0;
+        model[8] = 0; model[9] = 0; model[10] = 1;
+        model[12] = x; model[13] = y; model[14] = 3f; // just above the turf, avoids z-fighting
+
+        GLES20.glDepthMask(false);
+        GLES20.glEnable(GLES20.GL_BLEND);
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+        GLES20.glUseProgram(spriteProgram);
+        Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
+        Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
+        GLES20.glUniformMatrix4fv(sUMVP, 1, false, mvp, 0);
+        GLES20.glUniform4f(sUColor, 0f, 0f, 0f, alpha);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, tex);
+        GLES20.glUniform1i(sUTex, 0);
+        quadPN.position(0);
+        GLES20.glEnableVertexAttribArray(sAPos);
+        GLES20.glVertexAttribPointer(sAPos, 3, GLES20.GL_FLOAT, false, 20, quadPN);
+        quadPN.position(3);
+        GLES20.glEnableVertexAttribArray(sAUv);
+        GLES20.glVertexAttribPointer(sAUv, 2, GLES20.GL_FLOAT, false, 20, quadPN);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
+        GLES20.glDepthMask(true);
+        GLES20.glUseProgram(program);
     }
 
+    // (old box-based drawShadow removed — see drawGroundShadow above, Fix #11/#12)
+
     // ========== VFX ==========
+    /**
+     * Fix #19: continuous boost trail — previously sampled once per ~16ms regardless
+     * of how far the car moved, so at high speed consecutive puffs were spaced far
+     * apart and the "ribbon" had visible gaps. Now interpolates extra points when the
+     * car has moved more than a step distance since the last sample, so the trail
+     * stays unbroken at any speed, plus a slightly higher base spawn rate.
+     */
+    private final float[] lastTrailPos = new float[3];
+    private boolean lastTrailValid = false;
     private void updateBoostTrail(float dt, boolean on, float x,float y,float z) {
         if (on) {
             tAcc += dt;
-            if (tAcc > 0.016f) {
+            if (tAcc > 0.012f) {
                 tAcc = 0;
+                if (lastTrailValid) {
+                    float dx=x-lastTrailPos[0], dy=y-lastTrailPos[1], dz=z-lastTrailPos[2];
+                    float dist=(float)Math.sqrt(dx*dx+dy*dy+dz*dz);
+                    float step = 26f; // max gap between trail puffs, world units
+                    int extra = Math.min((int)(dist/step), TRAIL - 1);
+                    for (int k = 1; k <= extra; k++) {
+                        float f = (float)k/(extra+1);
+                        tX[tHead]=lastTrailPos[0]+dx*f; tY[tHead]=lastTrailPos[1]+dy*f; tZ[tHead]=lastTrailPos[2]+dz*f;
+                        tLife[tHead]=1f;
+                        tHead=(tHead+1)%TRAIL;
+                    }
+                }
                 tX[tHead]=x; tY[tHead]=y; tZ[tHead]=z;
                 tLife[tHead]=1f;
                 tHead=(tHead+1)%TRAIL;
+                lastTrailPos[0]=x; lastTrailPos[1]=y; lastTrailPos[2]=z;
+                lastTrailValid = true;
             }
+        } else {
+            lastTrailValid = false;
         }
         for (int i=0;i<TRAIL;i++) tLife[i] = Math.max(0f, tLife[i]-dt*1.8f);
     }
@@ -526,10 +810,16 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             if (tLife[i] <= 0.01f) continue;
             float life=tLife[i];
             float s=20f+55f*life;
+            // Fix #19: cool the color from white-hot near the nozzle to deep orange/red
+            // as it ages, instead of a flat orange tint the whole way, for a smoother
+            // continuous-ribbon read rather than a chain of identical puffs.
+            float rC = 1f;
+            float gC = 0.25f + 0.65f*life;
+            float bC = 0.08f + 0.35f*life*life;
             if (flame != 0) {
-                drawBillboard(tX[i], tY[i], tZ[i], s, flame, 1f, 0.55f + 0.4f*life, 0.15f, life*0.85f);
+                drawBillboard(tX[i], tY[i], tZ[i], s, flame, rC, gC, bC, life*0.85f);
             } else {
-                litBox(tX[i],tY[i],tZ[i], s,s,s*0.7f, 1f,0.5f+0.4f*life,0.1f, life*0.7f, 0.5f, life);
+                litBox(tX[i],tY[i],tZ[i], s,s,s*0.7f, rC,gC,bC, life*0.7f, 0.5f, life);
             }
             if (life < 0.45f && smoke != 0) {
                 drawBillboard(tX[i], tY[i], tZ[i]+8f, s*1.2f, smoke, 0.6f, 0.6f, 0.6f, life*0.35f);
@@ -537,38 +827,110 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         }
     }
 
+    /** Fix #21 soft ball trail */
     private void drawBallTrail() {
+        int flare = assets.tex("textures/particles/flare_01.png");
+        int circle = assets.tex("textures/particles/circle_01.png");
         for (int i=0;i<bTrailN;i++) {
             int idx=(bTrailH-1-i+48)%24;
             float t=1f-i/24f;
-            litSphere(bTrailX[idx],bTrailY[idx],bTrailZ[idx], 30f+20f*t, 1f,0.85f,0.3f, t*0.35f, 0.5f, t*0.3f);
+            float size = 35f + 50f * t;
+            float a = t * 0.5f;
+            if (flare != 0)
+                drawBillboard(bTrailX[idx], bTrailY[idx], bTrailZ[idx], size*1.5f, flare, 1f,0.7f,0.25f, a*0.55f);
+            if (circle != 0)
+                drawBillboard(bTrailX[idx], bTrailY[idx], bTrailZ[idx], size, circle, 1f,0.9f,0.4f, a);
+            else
+                litSphere(bTrailX[idx],bTrailY[idx],bTrailZ[idx], size*0.55f, 1f,0.85f,0.3f, a, 0.5f, a*0.4f);
         }
     }
 
+    /** Fix #22 impact sparks scaled by impulse */
     private void spawnImpact(float x,float y,float z, float impulse) {
-        int n = Math.min(24, 8 + (int)(impulse/200f));
+        int n = Math.min(28, 10 + (int)(impulse/180f));
         for (int i=0;i<n;i++) {
             int id = allocP();
             if (id < 0) break;
             pX[id]=x; pY[id]=y; pZ[id]=z;
             float ang = rng.nextFloat()*(float)Math.PI*2;
-            float sp = 200f + rng.nextFloat()*impulse*0.4f;
-            pVX[id]=(float)Math.cos(ang)*sp; pVY[id]=(float)Math.sin(ang)*sp; pVZ[id]=100f+rng.nextFloat()*300f;
-            pLife[id]=pMax[id]=0.35f+rng.nextFloat()*0.35f;
-            pR[id]=1f; pG[id]=0.85f; pB[id]=0.3f; pS[id]=20f+rng.nextFloat()*30f;
+            float sp = 250f + rng.nextFloat()*impulse*0.5f;
+            pVX[id]=(float)Math.cos(ang)*sp; pVY[id]=(float)Math.sin(ang)*sp; pVZ[id]=150f+rng.nextFloat()*400f;
+            pLife[id]=pMax[id]=0.28f+rng.nextFloat()*0.4f;
+            pR[id]=1f; pG[id]=0.75f+rng.nextFloat()*0.25f; pB[id]=0.2f+rng.nextFloat()*0.3f;
+            pS[id]=18f+rng.nextFloat()*35f;
         }
     }
 
+    /** Fix #23 substantial goal explosion */
     private void spawnGoal(float x,float y,float z) {
-        for (int i=0;i<40;i++) {
+        for (int i=0;i<55;i++) {
             int id = allocP();
             if (id < 0) break;
             pX[id]=x; pY[id]=y; pZ[id]=z;
             float ang = rng.nextFloat()*(float)Math.PI*2;
-            float sp = 400f + rng.nextFloat()*800f;
-            pVX[id]=(float)Math.cos(ang)*sp; pVY[id]=(float)Math.sin(ang)*sp; pVZ[id]=rng.nextFloat()*600f;
-            pLife[id]=pMax[id]=0.6f+rng.nextFloat()*0.6f;
-            pR[id]=1f; pG[id]=0.9f; pB[id]=0.4f; pS[id]=25f+rng.nextFloat()*40f;
+            float elev = rng.nextFloat()*(float)Math.PI*0.45f;
+            float sp = 500f + rng.nextFloat()*1100f;
+            pVX[id]=(float)(Math.cos(ang)*Math.cos(elev)*sp);
+            pVY[id]=(float)(Math.sin(ang)*Math.cos(elev)*sp);
+            pVZ[id]=(float)(Math.sin(elev)*sp) + 200f;
+            pLife[id]=pMax[id]=0.7f+rng.nextFloat()*0.9f;
+            // team-colored-ish warm explosion
+            pR[id]=1f; pG[id]=0.55f+rng.nextFloat()*0.4f; pB[id]=0.15f+rng.nextFloat()*0.35f;
+            pS[id]=30f+rng.nextFloat()*55f;
+        }
+        // extra smoke layer
+        for (int i=0;i<18;i++) {
+            int id = allocP();
+            if (id < 0) break;
+            pX[id]=x; pY[id]=y; pZ[id]=z+20f;
+            float ang = rng.nextFloat()*(float)Math.PI*2;
+            float sp = 80f + rng.nextFloat()*200f;
+            pVX[id]=(float)Math.cos(ang)*sp; pVY[id]=(float)Math.sin(ang)*sp; pVZ[id]=40f+rng.nextFloat()*120f;
+            pLife[id]=pMax[id]=1.0f+rng.nextFloat()*0.8f;
+            pR[id]=0.55f; pG[id]=0.55f; pB[id]=0.6f; pS[id]=50f+rng.nextFloat()*40f;
+        }
+    }
+
+    /** Fix #52 landing dust burst */
+    private void spawnLanding(float x, float y, float z) {
+        for (int i=0;i<14;i++) {
+            int id = allocP();
+            if (id < 0) break;
+            pX[id]=x; pY[id]=y; pZ[id]=z;
+            float ang = rng.nextFloat()*(float)Math.PI*2;
+            float sp = 60f + rng.nextFloat()*180f;
+            pVX[id]=(float)Math.cos(ang)*sp; pVY[id]=(float)Math.sin(ang)*sp; pVZ[id]=30f+rng.nextFloat()*80f;
+            pLife[id]=pMax[id]=0.35f+rng.nextFloat()*0.35f;
+            pR[id]=0.65f; pG[id]=0.6f; pB[id]=0.5f; pS[id]=25f+rng.nextFloat()*30f;
+        }
+    }
+
+    /** Fix #51 tire skid smoke */
+    private void spawnSkid(float x, float y, float z) {
+        if (rng.nextFloat() > 0.35f) return; // throttle spawn rate
+        int id = allocP();
+        if (id < 0) return;
+        pX[id]=x; pY[id]=y; pZ[id]=z;
+        pVX[id]=(rng.nextFloat()-0.5f)*40f; pVY[id]=(rng.nextFloat()-0.5f)*40f; pVZ[id]=20f+rng.nextFloat()*40f;
+        pLife[id]=pMax[id]=0.4f+rng.nextFloat()*0.3f;
+        pR[id]=0.45f; pG[id]=0.45f; pB[id]=0.48f; pS[id]=22f+rng.nextFloat()*18f;
+    }
+
+    /** Fix #20 supersonic speed streaks (subtle, non-obscuring) */
+    private void drawSupersonicStreaks(float x,float y,float z, float fx,float fy,float fz,
+                                      float rx,float ry,float rz, float ux,float uy,float uz) {
+        if (superStreak < 0.05f) return;
+        int flare = assets.tex("textures/particles/flare_01.png");
+        float a = superStreak * 0.35f;
+        for (int i=0;i<5;i++) {
+            float side = (i-2) * 18f;
+            float back = 40f + i*12f;
+            float px = x - fx*back + rx*side + ux*8f;
+            float py = y - fy*back + ry*side + uy*8f;
+            float pz = z - fz*back + rz*side + uz*8f;
+            float sz = 50f + 30f*superStreak;
+            if (flare != 0)
+                drawBillboard(px,py,pz, sz, flare, 0.7f,0.85f,1f, a*(1f-i*0.12f));
         }
     }
 
@@ -588,14 +950,136 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     }
 
     private void drawParticles() {
+        int spark = assets.tex("textures/particles/spark_02.png");
+        int flare = assets.tex("textures/particles/flare_01.png");
+        int smoke = assets.tex("textures/smoke/blackSmoke05.png");
         for (int i=0;i<pCount;i++) {
             if (pLife[i]<=0) continue;
             float t=pLife[i]/Math.max(0.01f,pMax[i]);
-            litBox(pX[i],pY[i],pZ[i], pS[i]*t,pS[i]*t,pS[i]*t, pR[i],pG[i],pB[i], t*0.8f, 0.5f, t*0.5f);
+            float size = pS[i]*t;
+            // cooler smoke-ish particles use smoke texture; hot ones use spark/flare
+            boolean cool = pR[i] < 0.7f && pG[i] < 0.7f;
+            if (cool && smoke != 0) {
+                drawBillboard(pX[i],pY[i],pZ[i], size*1.8f, smoke, pR[i],pG[i],pB[i], t*0.55f);
+            } else if (spark != 0) {
+                drawBillboard(pX[i],pY[i],pZ[i], size*1.5f, spark, pR[i],pG[i],pB[i], t*0.9f);
+            } else if (flare != 0) {
+                drawBillboard(pX[i],pY[i],pZ[i], size*1.8f, flare, pR[i],pG[i],pB[i], t*0.7f);
+            } else {
+                litBox(pX[i],pY[i],pZ[i], size,size,size, pR[i],pG[i],pB[i], t*0.8f, 0.5f, t*0.5f);
+            }
         }
     }
 
     // ========== DRAW HELPERS ==========
+    private void litFlatQuad(float x,float y,float z, float sx,float sy,
+                             float r,float g,float b,float a, float ambient, float emissive) {
+        Matrix.setIdentityM(model, 0);
+        Matrix.translateM(model, 0, x, y, z);
+        Matrix.scaleM(model, 0, sx, sy, 1f);
+        drawMesh(flatQuadPN, 6, r,g,b,a, ambient, emissive);
+    }
+
+    private void litCenterRing(float x, float y, float z,
+                               float r, float g, float b, float a, float ambient, float emissive) {
+        Matrix.setIdentityM(model, 0);
+        Matrix.translateM(model, 0, x, y, z);
+        drawMesh(centerRingPN, centerRingVerts, r,g,b,a, ambient, emissive);
+    }
+
+    /** Fix #5: a real flat surface quad (pos+normal) instead of a very thin litBox. */
+    private static FloatBuffer buildFlatQuadPN() {
+        float[] v = {
+            -0.5f,-0.5f,0f, 0,0,1,
+             0.5f,-0.5f,0f, 0,0,1,
+             0.5f, 0.5f,0f, 0,0,1,
+            -0.5f,-0.5f,0f, 0,0,1,
+             0.5f, 0.5f,0f, 0,0,1,
+            -0.5f, 0.5f,0f, 0,0,1,
+        };
+        FloatBuffer fb = ByteBuffer.allocateDirect(v.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        fb.put(v).position(0);
+        return fb;
+    }
+
+    /**
+     * Fix #6: a real circular ring mesh (annulus, triangle list) for the center
+     * circle, replacing the old "32 individual boxes" approximation. Flat, sits
+     * slightly above the field, and follows a true circle rather than a segmented
+     * polygon of blocky pieces.
+     */
+    private static FloatBuffer buildRingPN(float radius, float thickness, int segments) {
+        float rOuter = radius + thickness * 0.5f;
+        float rInner = radius - thickness * 0.5f;
+        float[] v = new float[segments * 6 * 6]; // 6 verts/segment * 6 floats/vert
+        int o = 0;
+        for (int i = 0; i < segments; i++) {
+            float a0 = (float)(i * Math.PI * 2 / segments);
+            float a1 = (float)((i + 1) * Math.PI * 2 / segments);
+            float ox0 = (float)Math.cos(a0)*rOuter, oy0 = (float)Math.sin(a0)*rOuter;
+            float ix0 = (float)Math.cos(a0)*rInner, iy0 = (float)Math.sin(a0)*rInner;
+            float ox1 = (float)Math.cos(a1)*rOuter, oy1 = (float)Math.sin(a1)*rOuter;
+            float ix1 = (float)Math.cos(a1)*rInner, iy1 = (float)Math.sin(a1)*rInner;
+            // two triangles per segment, both facing +Z
+            float[] tri = {
+                ix0,iy0,0f, 0,0,1,  ox0,oy0,0f, 0,0,1,  ox1,oy1,0f, 0,0,1,
+                ix0,iy0,0f, 0,0,1,  ox1,oy1,0f, 0,0,1,  ix1,iy1,0f, 0,0,1,
+            };
+            System.arraycopy(tri, 0, v, o, tri.length);
+            o += tri.length;
+        }
+        FloatBuffer fb = ByteBuffer.allocateDirect(v.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        fb.put(v).position(0);
+        return fb;
+    }
+
+    /**
+     * Fix #8: a curved quarter-cylinder fillet mesh used at each of the 4 arena
+     * corners, so the transition from side wall to end wall is a smooth curve
+     * ("floor ─────╮ │ wall") instead of a hard 90-degree box intersection.
+     * Built double-sided (both triangle windings) since the 4 corner instances
+     * are mirrored/rotated per-corner and a single winding wouldn't stay
+     * front-facing in every orientation.
+     */
+    private static FloatBuffer buildCurvedWallPN(float radius, float height, int segments) {
+        float[] v = new float[segments * 6 * 2 * 6]; // segments * 2 tris * 2 sides * 6 floats
+        int o = 0;
+        for (int i = 0; i < segments; i++) {
+            float a0 = (float)(Math.PI/2 * i / segments);
+            float a1 = (float)(Math.PI/2 * (i+1) / segments);
+            float x0 = (float)Math.cos(a0)*radius, y0 = (float)Math.sin(a0)*radius;
+            float x1 = (float)Math.cos(a1)*radius, y1 = (float)Math.sin(a1)*radius;
+            float nx0 = (float)Math.cos(a0), ny0 = (float)Math.sin(a0);
+            float nx1 = (float)Math.cos(a1), ny1 = (float)Math.sin(a1);
+            float[][] windings = {
+                { // front winding
+                    x0,y0,0, nx0,ny0,0,   x1,y1,0, nx1,ny1,0,   x1,y1,height, nx1,ny1,0,
+                    x0,y0,0, nx0,ny0,0,   x1,y1,height, nx1,ny1,0,   x0,y0,height, nx0,ny0,0,
+                },
+                { // reversed winding (so it's visible regardless of front-face direction)
+                    x1,y1,0, nx1,ny1,0,   x0,y0,0, nx0,ny0,0,   x0,y0,height, nx0,ny0,0,
+                    x1,y1,0, nx1,ny1,0,   x0,y0,height, nx0,ny0,0,   x1,y1,height, nx1,ny1,0,
+                }
+            };
+            for (float[] tri : windings) {
+                System.arraycopy(tri, 0, v, o, tri.length);
+                o += tri.length;
+            }
+        }
+        FloatBuffer fb = ByteBuffer.allocateDirect(v.length*4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        fb.put(v).position(0);
+        return fb;
+    }
+
+    /** Draws the curved corner fillet at (cx,cy), rotated so its arc faces the field. */
+    private void litCornerWall(float cx, float cy, float rotDeg,
+                               float r, float g, float b, float a, float ambient, float emissive) {
+        Matrix.setIdentityM(model, 0);
+        Matrix.translateM(model, 0, cx, cy, 0f);
+        Matrix.rotateM(model, 0, rotDeg, 0f, 0f, 1f);
+        drawMesh(cornerWallPN, cornerWallVerts, r,g,b,a, ambient, emissive);
+    }
+
     private void litBox(float x,float y,float z, float sx,float sy,float sz,
                         float r,float g,float b,float a, float ambient, float emissive) {
         Matrix.setIdentityM(model,0);
@@ -712,23 +1196,49 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                          float ux, float uy, float uz,
                          float rx, float ry, float rz,
                          float colorScale, float emissive) {
-        // Sketchfab cars: after normalize, +X is length (forward), +Y up-ish, +Z side.
-        // RL basis: forward=f, right=r, up=u. Map local (X,Y,Z) -> (forward, up, right) was wrong in screenshots.
-        // Correct: local +X -> forward, local +Y -> up, local +Z -> right
+        drawGlb(glb, x, y, z, fx, fy, fz, ux, uy, uz, rx, ry, rz, colorScale, emissive, null);
+    }
+
+    /**
+     * Fix #1 / #4 / #34 / #48: the physics basis (forward/right/up + position) is the
+     * source of truth and is NEVER modified here. `visual` is an optional, per-vehicle
+     * correction (see CarCatalog.VisualTransform) that only adjusts how the *mesh* is
+     * presented on top of that physics basis — e.g. because the GLB's authored local
+     * forward axis doesn't match the engine's forward convention. There is no longer
+     * a single hardcoded rotation applied to every model.
+     */
+    private void drawGlb(GlbModel glb, float x, float y, float z,
+                         float fx, float fy, float fz,
+                         float ux, float uy, float uz,
+                         float rx, float ry, float rz,
+                         float colorScale, float emissive,
+                         CarCatalog.VisualTransform visual) {
         Matrix.setIdentityM(model, 0);
-        model[0] = fx;  model[1] = fy;  model[2] = fz;   // X axis -> forward
-        model[4] = ux;  model[5] = uy;  model[6] = uz;   // Y axis -> up
-        model[8] = rx;  model[9] = ry;  model[10] = rz;  // Z axis -> right
-        model[12] = x;  model[13] = y;  model[14] = z;
-        // If still sideways, flip: try local -Z as forward via 180 yaw around up
-        float[] rot = new float[16];
-        Matrix.setRotateM(rot, 0, 180f, 0f, 1f, 0f); // 180° around local Y (up) so nose matches RL +forward
-        float[] oriented = new float[16];
-        Matrix.multiplyMM(oriented, 0, model, 0, rot, 0);
-        System.arraycopy(oriented, 0, model, 0, 16);
+        // Physics basis: local +X -> forward, +Y -> right, +Z -> up
+        model[0] = fx; model[1] = fy; model[2] = fz;
+        model[4] = rx; model[5] = ry; model[6] = rz;
+        model[8] = ux; model[9] = uy; model[10] = uz;
+        model[12] = x; model[13] = y; model[14] = z;
+
+        if (visual != null) {
+            // Fix #36 reuse preallocated matrices
+            Matrix.setIdentityM(corrM, 0);
+            if (visual.yawDeg != 0f) Matrix.rotateM(corrM, 0, visual.yawDeg, 0f, 0f, 1f);
+            if (visual.pitchDeg != 0f) Matrix.rotateM(corrM, 0, visual.pitchDeg, 0f, 1f, 0f);
+            if (visual.rollDeg != 0f) Matrix.rotateM(corrM, 0, visual.rollDeg, 1f, 0f, 0f);
+            if (visual.scale != 1f) Matrix.scaleM(corrM, 0, visual.scale, visual.scale, visual.scale);
+            if (visual.offsetX != 0f || visual.offsetY != 0f || visual.offsetZ != 0f) {
+                Matrix.setIdentityM(offsetM, 0);
+                Matrix.translateM(offsetM, 0, visual.offsetX, visual.offsetY, visual.offsetZ);
+                Matrix.multiplyMM(corrM, 0, offsetM, 0, corrM, 0);
+            }
+            Matrix.multiplyMM(orientedM, 0, model, 0, corrM, 0);
+            System.arraycopy(orientedM, 0, model, 0, 16);
+        }
 
         GLES20.glUseProgram(meshProgram);
         GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);
+        GLES20.glUniform3f(mUCameraPos, currentCameraPos[0], currentCameraPos[1], currentCameraPos[2]);
         for (GlbModel.Primitive prim : glb.primitives) {
             Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
             Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
@@ -736,8 +1246,26 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
             GLES20.glUniform4f(mUColor, prim.baseColor[0]*colorScale, prim.baseColor[1]*colorScale,
                     prim.baseColor[2]*colorScale, prim.baseColor[3]);
-            GLES20.glUniform1f(mUAmbient, 0.55f);
+            GLES20.glUniform1f(mUAmbient, 0.4f);
             GLES20.glUniform1f(mUEmissive, emissive);
+            GLES20.glUniform3f(mUEmissiveFactor, prim.emissiveFactor[0], prim.emissiveFactor[1], prim.emissiveFactor[2]);
+            GLES20.glUniform1f(mUMetallic, prim.metallic);
+            GLES20.glUniform1f(mURoughness, prim.roughness);
+            // Fix #44: don't render every material the same way — alpha-tested/blended
+            // materials (glass, decals) need different GL state than opaque paint.
+            if ("BLEND".equals(prim.alphaMode)) {
+                GLES20.glEnable(GLES20.GL_BLEND);
+                GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+                GLES20.glDepthMask(false);
+            } else {
+                GLES20.glDisable(GLES20.GL_BLEND);
+                GLES20.glDepthMask(true);
+            }
+            if (prim.doubleSided) {
+                GLES20.glDisable(GLES20.GL_CULL_FACE);
+            } else {
+                GLES20.glEnable(GLES20.GL_CULL_FACE);
+            }
             boolean useTex = prim.textureId > 0;
             GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
             if (useTex) {
@@ -757,6 +1285,11 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             prim.indices.position(0);
             GLES20.glDrawElements(GLES20.GL_TRIANGLES, prim.indexCount, prim.indexType, prim.indices);
         }
+        // Restore default GL state so subsequent draws (field, stadium, etc.) aren't
+        // affected by a per-material BLEND/double-sided toggle made above.
+        GLES20.glDisable(GLES20.GL_BLEND);
+        GLES20.glDepthMask(true);
+        GLES20.glEnable(GLES20.GL_CULL_FACE);
         GLES20.glUseProgram(program);
     }
 
@@ -767,14 +1300,18 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         Matrix.scaleM(model, 0, scale, scale, scale);
         GLES20.glUseProgram(meshProgram);
         GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);
+        GLES20.glUniform3f(mUCameraPos, currentCameraPos[0], currentCameraPos[1], currentCameraPos[2]);
         for (GlbModel.Primitive prim : glb.primitives) {
             Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
             Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
             GLES20.glUniformMatrix4fv(mUMVP, 1, false, mvp, 0);
             GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
             GLES20.glUniform4f(mUColor, prim.baseColor[0]*cr, prim.baseColor[1]*cg, prim.baseColor[2]*cb, prim.baseColor[3]);
-            GLES20.glUniform1f(mUAmbient, 0.6f);
+            GLES20.glUniform1f(mUAmbient, 0.45f);
             GLES20.glUniform1f(mUEmissive, emissive);
+            GLES20.glUniform3f(mUEmissiveFactor, prim.emissiveFactor[0], prim.emissiveFactor[1], prim.emissiveFactor[2]);
+            GLES20.glUniform1f(mUMetallic, prim.metallic);
+            GLES20.glUniform1f(mURoughness, prim.roughness);
             boolean useTex = prim.textureId > 0;
             GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
             if (useTex) {

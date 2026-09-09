@@ -69,7 +69,8 @@
                 android:textColor="#FFFFFF"
                 android:background="#442A3548"
                 android:paddingStart="12dp"
-                android:paddingEnd="12dp" />
+                android:paddingEnd="12dp" 
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/btn_cam"
@@ -93,7 +94,8 @@
                 android:textColor="#FFFFFF"
                 android:background="#442A3548"
                 android:paddingStart="12dp"
-                android:paddingEnd="12dp" />
+                android:paddingEnd="12dp" 
+                android:visibility="gone" />
 
             <Button
                 android:id="@+id/btn_console"
@@ -105,42 +107,44 @@
                 android:textColor="#88FFAA"
                 android:background="#33203328"
                 android:paddingStart="12dp"
-                android:paddingEnd="12dp" />
+                android:paddingEnd="12dp" 
+                android:visibility="gone" />
         </LinearLayout>
     </LinearLayout>
 
-    <!-- Bottom HUD: boost + speed -->
+    <!-- Bottom HUD: compact boost (Fix #30) -->
     <LinearLayout
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="bottom"
+        android:layout_gravity="bottom|start"
         android:orientation="vertical"
-        android:padding="16dp"
-        android:background="#CC0A0E18">
+        android:padding="12dp"
+        android:layout_margin="12dp"
+        android:background="#AA0A0E18">
 
         <TextView
             android:id="@+id/hud_speed"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="0 uu/s"
             android:textColor="#CCFFFFFF"
-            android:textSize="13sp"
+            android:textSize="12sp"
             android:fontFamily="sans-serif-medium" />
 
         <TextView
             android:id="@+id/hud_boost_label"
-            android:layout_width="match_parent"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:text="BOOST"
             android:textColor="#FFB84D"
-            android:textSize="11sp"
+            android:textSize="10sp"
             android:textStyle="bold" />
 
         <FrameLayout
-            android:layout_width="match_parent"
-            android:layout_height="18dp"
-            android:layout_marginTop="4dp"
+            android:layout_width="140dp"
+            android:layout_height="10dp"
+            android:layout_marginTop="3dp"
             android:background="#33FFFFFF">
 
             <View
@@ -150,19 +154,23 @@
                 android:background="#FFFFA020"
                 android:layout_gravity="start" />
         </FrameLayout>
-
-        <TextView
-            android:id="@+id/hud_goal"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:text=""
-            android:textColor="#FFFFDD66"
-            android:textSize="20sp"
-            android:textStyle="bold"
-            android:gravity="center"
-            android:visibility="gone" />
     </LinearLayout>
+
+    <TextView
+        android:id="@+id/hud_goal"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text=""
+        android:textColor="#FFFFDD66"
+        android:textSize="28sp"
+        android:textStyle="bold"
+        android:gravity="center"
+        android:visibility="gone"
+        android:shadowColor="#FF000000"
+        android:shadowDx="0"
+        android:shadowDy="2"
+        android:shadowRadius="6" />
 
     <ScrollView
         android:id="@+id/console_scroll"

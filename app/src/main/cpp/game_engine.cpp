@@ -328,8 +328,27 @@ void GameEngine::FillSnapshot(RenderSnapshot& snap) {
 	snap.impactImpulse = (dBall > 200.f) ? dBall : 0.f;
 	if (dBall > 400.f) camShake_ = std::min(camShake_ + dBall / 800.f, 3.f);
 
-	// Goal line ~ ±5120 Y
-	snap.goalScored = (std::abs(bs.pos.y) > 5124.f && bs.pos.z < 650.f && std::abs(bs.pos.x) < 900.f);
+	// Goal line ~ ±5120 Y.
+	// Fix #24: this used to be a level check on the *current* ball position, which
+	// stays true for every frame the ball spends beyond the line (multiple goal
+	// events per real goal, plus false re-triggers while the ball lingers in the
+	// net). Detect the actual crossing instead: compare previous vs current Y so
+	// the event fires exactly once, then "disarm" until the ball is back in the
+	// field of play so the next real goal can trigger again.
+	bool wasBeyond = std::abs(prevBallPosY_) > 5124.f;
+	bool isBeyond  = std::abs(bs.pos.y) > 5124.f && bs.pos.z < 650.f && std::abs(bs.pos.x) < 900.f;
+
+	snap.goalScored = false;
+	if (isBeyond && !wasBeyond && goalArmed_) {
+		snap.goalScored = true;
+		goalArmed_ = false; // consumed; won't fire again until re-armed below
+	}
+	// Re-arm once the ball has clearly returned to the field (past the reset/kickoff
+	// area), e.g. after GameEngine resets the ball position following a goal.
+	if (std::abs(bs.pos.y) < 5124.f - 50.f) {
+		goalArmed_ = true;
+	}
+	prevBallPosY_ = bs.pos.y;
 
 	RebuildCamera(snap);
 }

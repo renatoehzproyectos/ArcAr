@@ -99,6 +99,11 @@ private:
 	float camFov_ = 70.f;
 	float camShake_ = 0.f;
 	float prevBallSpeed_ = 0.f;
+	// Fix #24: previous ball Y used for one-shot goal-crossing edge detection,
+	// instead of a level check on the current position (which stays true for
+	// many frames while the ball is beyond the line).
+	float prevBallPosY_ = 0.f;
+	bool  goalArmed_ = true;
 };
 
 

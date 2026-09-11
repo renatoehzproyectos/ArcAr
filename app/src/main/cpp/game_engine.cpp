@@ -4,7 +4,6 @@
 #include <cmath>
 #include <cstring>
 #include <map>
-#include <cstdlib>
 
 #define LOG_TAG "ArcArNative"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
@@ -46,7 +45,7 @@ bool GameEngine::Init(const std::string& meshesDir) {
 		}
 		if (!inited) {
 			try {
-				LOGI("Init: InitFromMem(empty)...");
+				LOGI("Init: InitFromMem(empty) — plane arena...");
 				std::map<GameMode, std::vector<FileData>> empty;
 				ArcAr::InitFromMem(empty, /*silent=*/false);
 				LOGI("Init: InitFromMem OK");
@@ -62,14 +61,13 @@ bool GameEngine::Init(const std::string& meshesDir) {
 		LOGI("Init: Arena::Create...");
 		ArenaConfig cfg{};
 		cfg.memWeightMode = ArenaMemWeightMode::LIGHT;
-		// Prefer custom broadphase off on mobile if it causes issues
 		cfg.useCustomBroadphase = false;
 		arena_ = Arena::Create(GameMode::STANDARD, cfg, 120.f);
 		if (!arena_) {
 			LOGE("Init: Arena::Create returned null");
 			return false;
 		}
-		LOGI("Init: Arena OK");
+		LOGI("Init: Arena OK (plane collision fallback)");
 
 		LOGI("Init: AddCar...");
 		player_ = arena_->AddCar(Team::BLUE, CAR_CONFIG_BODY_C);
@@ -85,7 +83,8 @@ bool GameEngine::Init(const std::string& meshesDir) {
 		{
 			CarState cs = player_->GetState();
 			cs.pos = Vec(0.f, -2560.f, GameConst::CAR_SPAWN_REST_Z);
-			cs.rotMat = RotMat::LookAt(Vec(0.f, 1.f, 0.f), Vec(0.f, 0.f, 1.f)); // face +Y (field forward)
+			// Face +Y (field forward)
+			cs.rotMat = RotMat::LookAt(Vec(0.f, 1.f, 0.f), Vec(0.f, 0.f, 1.f));
 			cs.vel = Vec(0, 0, 0);
 			cs.angVel = Vec(0, 0, 0);
 			cs.boost = 100.f;
@@ -101,8 +100,15 @@ bool GameEngine::Init(const std::string& meshesDir) {
 
 		ballCam_ = true;
 		timeAccum_ = 0.f;
+		camPosSmooth_[0] = 0.f;
+		camPosSmooth_[1] = -3000.f;
+		camPosSmooth_[2] = 200.f;
+		camTgtSmooth_[0] = 0.f;
+		camTgtSmooth_[1] = 0.f;
+		camTgtSmooth_[2] = 100.f;
+		camFov_ = 70.f;
 		ready_ = true;
-		LOGI("Init: READY");
+		LOGI("Init: READY — Alpha 0.1");
 		return true;
 	} catch (const std::exception& e) {
 		LOGE("Init: exception: %s", e.what());
@@ -158,7 +164,7 @@ void GameEngine::ResetToKickoff() {
 
 	CarState cs = player_->GetState();
 	cs.pos = Vec(0.f, -2560.f, GameConst::CAR_SPAWN_REST_Z);
-	cs.rotMat = RotMat::LookAt(Vec(0.f, 1.f, 0.f), Vec(0.f, 0.f, 1.f)); // face +Y (field forward)
+	cs.rotMat = RotMat::LookAt(Vec(0.f, 1.f, 0.f), Vec(0.f, 0.f, 1.f));
 	cs.vel = Vec(0, 0, 0);
 	cs.angVel = Vec(0, 0, 0);
 	cs.boost = 100.f;
@@ -179,7 +185,6 @@ void GameEngine::Update(float dtSeconds) {
 	if (!ready_ || !arena_ || !player_) return;
 
 	player_->controls = pendingControls_;
-	// Infinite boost = unlimited fuel only; player still must hold boost to use it
 	if (infiniteBoost_) {
 		CarState cs = player_->GetState();
 		if (cs.boost < 100.f) {
@@ -211,10 +216,9 @@ void GameEngine::RebuildCamera(RenderSnapshot& snap) {
 	float speed = snap.speedUU;
 	float speed01 = std::min(speed / 2300.f, 1.f);
 
-	// Dynamic distance / height / look-ahead from speed + boost
-	float camDist = 300.f + speed01 * 90.f + (snap.isBoosting ? 40.f : 0.f);
-	float camHeight = 120.f + speed01 * 40.f + (snap.onGround ? 0.f : 30.f);
-	float lookAhead = 80.f + speed01 * 120.f;
+	float camDist = 280.f + speed01 * 60.f;
+	float camHeight = 110.f + (snap.onGround ? 0.f : 25.f);
+	float lookAhead = 60.f + speed01 * 80.f;
 
 	float desiredPos[3], desiredTgt[3];
 
@@ -223,32 +227,20 @@ void GameEngine::RebuildCamera(RenderSnapshot& snap) {
 		Vec toBall = ball - carPos;
 		float tlen = std::sqrt(toBall.x * toBall.x + toBall.y * toBall.y + toBall.z * toBall.z);
 		Vec dir = (tlen > 50.f) ? Vec(toBall.x / tlen, toBall.y / tlen, toBall.z / tlen) : fwd;
-		// Blend look direction with velocity for prediction
-		float vlen = std::sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
-		if (vlen > 100.f) {
-			Vec vn(vel.x/vlen, vel.y/vlen, vel.z/vlen);
-			dir.x = dir.x * 0.7f + vn.x * 0.3f;
-			dir.y = dir.y * 0.7f + vn.y * 0.3f;
-			dir.z = dir.z * 0.7f + vn.z * 0.3f;
-			float dl = std::sqrt(dir.x*dir.x+dir.y*dir.y+dir.z*dir.z);
-			if (dl > 1e-4f) { dir.x/=dl; dir.y/=dl; dir.z/=dl; }
-		}
-		float dist = std::min(std::max(tlen * 0.35f, 220.f), 520.f);
+		float dist = std::min(std::max(tlen * 0.35f, 220.f), 500.f);
 		desiredPos[0] = carPos.x - dir.x * dist;
 		desiredPos[1] = carPos.y - dir.y * dist;
-		desiredPos[2] = carPos.z + camHeight + std::min(tlen * 0.05f, 80.f);
-		// Look between car and ball, weighted toward ball
-		desiredTgt[0] = carPos.x * 0.25f + ball.x * 0.75f;
-		desiredTgt[1] = carPos.y * 0.25f + ball.y * 0.75f;
-		desiredTgt[2] = carPos.z * 0.25f + ball.z * 0.75f + 30.f;
+		desiredPos[2] = carPos.z + camHeight + std::min(tlen * 0.04f, 60.f);
+		desiredTgt[0] = carPos.x * 0.3f + ball.x * 0.7f;
+		desiredTgt[1] = carPos.y * 0.3f + ball.y * 0.7f;
+		desiredTgt[2] = carPos.z * 0.3f + ball.z * 0.7f + 25.f;
 	} else {
-		// Chase cam with velocity look-ahead
 		Vec look = fwd;
 		float vlen = std::sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
 		if (vlen > 50.f) {
-			look.x = fwd.x * 0.55f + (vel.x/vlen) * 0.45f;
-			look.y = fwd.y * 0.55f + (vel.y/vlen) * 0.45f;
-			look.z = fwd.z * 0.55f + (vel.z/vlen) * 0.45f;
+			look.x = fwd.x * 0.6f + (vel.x/vlen) * 0.4f;
+			look.y = fwd.y * 0.6f + (vel.y/vlen) * 0.4f;
+			look.z = fwd.z * 0.6f + (vel.z/vlen) * 0.4f;
 			float ll = std::sqrt(look.x*look.x+look.y*look.y+look.z*look.z);
 			if (ll > 1e-4f) { look.x/=ll; look.y/=ll; look.z/=ll; }
 		}
@@ -257,37 +249,26 @@ void GameEngine::RebuildCamera(RenderSnapshot& snap) {
 		desiredPos[2] = carPos.z + camHeight;
 		desiredTgt[0] = carPos.x + look.x * lookAhead;
 		desiredTgt[1] = carPos.y + look.y * lookAhead;
-		desiredTgt[2] = carPos.z + look.z * 20.f + 25.f;
+		desiredTgt[2] = carPos.z + 20.f;
 	}
 
-	// Smooth follow (exponential)
-	const float follow = 0.12f;
+	const float follow = 0.15f;
 	for (int i = 0; i < 3; i++) {
 		camPosSmooth_[i] += (desiredPos[i] - camPosSmooth_[i]) * follow;
 		camTgtSmooth_[i] += (desiredTgt[i] - camTgtSmooth_[i]) * follow;
 	}
 
-	// FOV: base 68, up to ~85 when boosting / high speed
-	float wantFov = 68.f + speed01 * 10.f + (snap.isBoosting ? 8.f : 0.f);
-	camFov_ += (wantFov - camFov_) * 0.08f;
+	camFov_ = 70.f;
 
-	// Shake decay + add from hard ball hits (handled in FillSnapshot)
-	camShake_ *= 0.90f;
-	if (camShake_ < 0.05f) camShake_ = 0.f;
-
-	float sx = camShake_ * ((float)(rand() % 1000) / 1000.f - 0.5f) * 12.f;
-	float sy = camShake_ * ((float)(rand() % 1000) / 1000.f - 0.5f) * 12.f;
-	float sz = camShake_ * ((float)(rand() % 1000) / 1000.f - 0.5f) * 6.f;
-
-	snap.camPos[0] = camPosSmooth_[0] + sx;
-	snap.camPos[1] = camPosSmooth_[1] + sy;
-	snap.camPos[2] = camPosSmooth_[2] + sz;
+	snap.camPos[0] = camPosSmooth_[0];
+	snap.camPos[1] = camPosSmooth_[1];
+	snap.camPos[2] = camPosSmooth_[2];
 	snap.camTarget[0] = camTgtSmooth_[0];
 	snap.camTarget[1] = camTgtSmooth_[1];
 	snap.camTarget[2] = camTgtSmooth_[2];
 	snap.ballCam = ballCam_;
 	snap.camFov = camFov_;
-	snap.camShake = camShake_;
+	snap.camShake = 0.f;
 }
 
 void GameEngine::FillSnapshot(RenderSnapshot& snap) {
@@ -323,32 +304,8 @@ void GameEngine::FillSnapshot(RenderSnapshot& snap) {
 
 	float bsp = std::sqrt(bs.vel.x*bs.vel.x + bs.vel.y*bs.vel.y + bs.vel.z*bs.vel.z);
 	snap.ballSpeed = bsp;
-	float dBall = bsp - prevBallSpeed_;
-	prevBallSpeed_ = bsp;
-	snap.impactImpulse = (dBall > 200.f) ? dBall : 0.f;
-	if (dBall > 400.f) camShake_ = std::min(camShake_ + dBall / 800.f, 3.f);
-
-	// Goal line ~ ±5120 Y.
-	// Fix #24: this used to be a level check on the *current* ball position, which
-	// stays true for every frame the ball spends beyond the line (multiple goal
-	// events per real goal, plus false re-triggers while the ball lingers in the
-	// net). Detect the actual crossing instead: compare previous vs current Y so
-	// the event fires exactly once, then "disarm" until the ball is back in the
-	// field of play so the next real goal can trigger again.
-	bool wasBeyond = std::abs(prevBallPosY_) > 5124.f;
-	bool isBeyond  = std::abs(bs.pos.y) > 5124.f && bs.pos.z < 650.f && std::abs(bs.pos.x) < 900.f;
-
+	snap.impactImpulse = 0.f;
 	snap.goalScored = false;
-	if (isBeyond && !wasBeyond && goalArmed_) {
-		snap.goalScored = true;
-		goalArmed_ = false; // consumed; won't fire again until re-armed below
-	}
-	// Re-arm once the ball has clearly returned to the field (past the reset/kickoff
-	// area), e.g. after GameEngine resets the ball position following a goal.
-	if (std::abs(bs.pos.y) < 5124.f - 50.f) {
-		goalArmed_ = true;
-	}
-	prevBallPosY_ = bs.pos.y;
 
 	RebuildCamera(snap);
 }

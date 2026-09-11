@@ -3,8 +3,6 @@ name: Build APK
 on:
   push:
     branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -24,11 +22,25 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: false
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install SDK packages (platform, build-tools, NDK, CMake)
+      - name: Cache Android SDK packages (NDK / CMake / build-tools)
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}/ndk
+            ${{ env.ANDROID_HOME }}/cmake
+            ${{ env.ANDROID_HOME }}/build-tools
+            ${{ env.ANDROID_HOME }}/platforms
+          key: android-sdk-34-ndk-26.1.10909125-cmake-3.22.1
+
+      - name: Install SDK packages
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
         run: |
           set -e
           sdkmanager --install \
@@ -36,6 +48,15 @@ jobs:
             "build-tools;34.0.0" \
             "ndk;26.1.10909125" \
             "cmake;3.22.1"
+          yes | sdkmanager --licenses >/dev/null || true
+
+      - name: Ensure SDK packages present
+        run: |
+          set -e
+          # Re-install if cache was partial / missing pieces
+          for pkg in "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1"; do
+            sdkmanager --install "$pkg" >/dev/null 2>&1 || true
+          done
           yes | sdkmanager --licenses >/dev/null || true
           echo "ANDROID_HOME=$ANDROID_HOME"
           ls "$ANDROID_HOME/ndk" || true
@@ -56,6 +77,7 @@ jobs:
           name: arcar-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+          retention-days: 7
 
       - name: Upload build outputs on failure
         if: failure()
@@ -66,3 +88,4 @@ jobs:
             app/build/**
             **/*.log
           if-no-files-found: ignore
+          retention-days: 3

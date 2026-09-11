@@ -12,7 +12,7 @@
 
 namespace ArcAr {
 
-// Snapshot of everything the renderer needs for one frame (UU = unreal units)
+// Minimal snapshot for Alpha 0.1 renderer (layout matches jni_bridge float[40])
 struct RenderSnapshot {
 	// Car
 	float carPos[3];
@@ -35,24 +35,21 @@ struct RenderSnapshot {
 	float camTarget[3];
 	bool  ballCam;
 	float camFov;
-	float camShake;
+	float camShake; // kept for layout compatibility, always 0
 
-	// Ball impact (for VFX)
+	// Legacy / unused by minimal renderer but kept for JNI layout
 	float ballSpeed;
-	float impactImpulse; // rise when ball accelerates hard
-
-	// HUD
+	float impactImpulse;
 	float speedUU;
 	uint64_t tick;
 	bool  ready;
-	bool  goalScored; // ball crossed goal line this snapshot (sticky ~0.5s handled in render)
+	bool  goalScored;
 };
 
 class GameEngine {
 public:
 	static GameEngine& Instance();
 
-	// meshesDir: path where collision meshes live (may be empty → void-like / soft fail)
 	bool Init(const std::string& meshesDir);
 	void Shutdown();
 
@@ -66,11 +63,8 @@ public:
 	void SetInfiniteBoost(bool on);
 	bool IsInfiniteBoost() const { return infiniteBoost_; }
 
-	// Advance simulation by dt seconds (accumulates and steps at arena tick rate)
 	void Update(float dtSeconds);
-
 	RenderSnapshot GetSnapshot();
-
 	bool IsReady() const { return ready_; }
 
 private:
@@ -93,19 +87,10 @@ private:
 	float timeAccum_ = 0.f;
 	static constexpr float kFixedDt = 1.f / 120.f;
 
-	// Smoothed camera state
+	// Simple smoothed chase camera
 	float camPosSmooth_[3] = {0, -3000, 200};
 	float camTgtSmooth_[3] = {0, 0, 100};
 	float camFov_ = 70.f;
-	float camShake_ = 0.f;
-	float prevBallSpeed_ = 0.f;
-	// Fix #24: previous ball Y used for one-shot goal-crossing edge detection,
-	// instead of a level check on the current position (which stays true for
-	// many frames while the ball is beyond the line).
-	float prevBallPosY_ = 0.f;
-	bool  goalArmed_ = true;
 };
-
-
 
 } // namespace ArcAr

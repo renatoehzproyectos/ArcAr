@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/bg_start_screen"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:id="@+id/btn_mode_back"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:gravity="center"
+            android:background="@drawable/bg_button_blue"
+            android:text="←  VOLVER"
+            android:textColor="#FFE8F4FF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:text="SELECCIONAR MODO"
+            android:textColor="#FFE8F4FF"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08" />
+
+        <View
+            android:layout_width="88dp"
+            android:layout_height="1dp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:gravity="center">
+
+        <!-- Baseplate -->
+        <LinearLayout
+            android:id="@+id/card_baseplate"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="8dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="18dp"
+            android:background="@drawable/bg_mode_card"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▢"
+                android:textColor="#FF40B8FF"
+                android:textSize="36sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="BASEPLATE"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Suelo plano infinito.\nIdeal para practicar física."
+                android:textColor="#99BBDD"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:background="@drawable/bg_play_btn"
+                android:text="JUGAR"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Import map -->
+        <LinearLayout
+            android:id="@+id/card_import"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="8dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="18dp"
+            android:background="@drawable/bg_mode_card"
+            android:clickable="true"
+            android:focusable="true">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="⇪"
+                android:textColor="#FF40B8FF"
+                android:textSize="36sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="IMPORT MAP"
+                android:textColor="#FFFFFFFF"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.06" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Importar mapa BakkesMod\n(.zip con .udk / .upk)"
+                android:textColor="#99BBDD"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp" />
+
+            <TextView
+                android:id="@+id/import_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Ningún mapa importado"
+                android:textColor="#6688AA"
+                android:textSize="11sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:paddingStart="14dp"
+                android:paddingEnd="14dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:background="@drawable/bg_button_blue"
+                android:text="IMPORTAR / ELEGIR"
+                android:textColor="#FF40B8FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Champions Field locked -->
+        <LinearLayout
+            android:id="@+id/card_champions"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:layout_margin="8dp"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="18dp"
+            android:background="@drawable/bg_mode_card_locked"
+            android:clickable="true"
+            android:focusable="true"
+            android:alpha="0.85">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🔒"
+                android:textColor="#668899"
+                android:textSize="32sp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="CHAMPIONS FIELD"
+                android:textColor="#99AABB"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:letterSpacing="0.04"
+                android:gravity="center" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:gravity="center"
+                android:text="Estadio clásico.\nPróximamente."
+                android:textColor="#667788"
+                android:textSize="12sp"
+                android:lineSpacingExtra="2dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:paddingTop="6dp"
+                android:paddingBottom="6dp"
+                android:background="@drawable/bg_mode_card_locked"
+                android:text="BLOQUEADO"
+                android:textColor="#778899"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

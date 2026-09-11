@@ -11,7 +11,7 @@
         android:supportsRtl="true">
 
         <activity
-            android:name=".MainActivity"
+            android:name=".StartActivity"
             android:exported="true"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize"
             android:screenOrientation="sensorLandscape">
@@ -20,6 +20,18 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".ModeSelectActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize"
+            android:screenOrientation="sensorLandscape" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize"
+            android:screenOrientation="sensorLandscape" />
 
         <activity
             android:name=".SettingsActivity"

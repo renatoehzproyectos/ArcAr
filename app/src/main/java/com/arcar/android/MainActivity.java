@@ -10,6 +10,7 @@ import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.TextView;
 import android.opengl.GLSurfaceView;
 
 /**
@@ -48,6 +49,22 @@ public class MainActivity extends Activity {
             gear.setFocusable(true);
             gear.setOnClickListener(v ->
                     startActivity(new Intent(this, SettingsActivity.class)));
+        }
+
+        String mode = getIntent().getStringExtra(ModeSelectActivity.EXTRA_MODE);
+        String mapName = getIntent().getStringExtra(ModeSelectActivity.EXTRA_MAP_NAME);
+        if (mode == null) mode = ModeSelectActivity.MODE_BASEPLATE;
+        Log.i(TAG, "Start mode=" + mode + (mapName != null ? (" map=" + mapName) : ""));
+
+        TextView mapLabel = findViewById(R.id.map_label);
+        if (mapLabel != null) {
+            if (ModeSelectActivity.MODE_IMPORTED.equals(mode) && mapName != null) {
+                mapLabel.setText("MAP  ·  " + mapName);
+                mapLabel.setVisibility(View.VISIBLE);
+            } else {
+                mapLabel.setText("BASEPLATE");
+                mapLabel.setVisibility(View.VISIBLE);
+            }
         }
 
         input = new InputMapper(this);

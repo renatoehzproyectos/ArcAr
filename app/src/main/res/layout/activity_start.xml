@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_start_screen">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ARCAR"
+            android:textColor="#FF40B8FF"
+            android:textSize="42sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.28" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="ALPHA 0.1  ·  GAMEPLAY CORE"
+            android:textColor="#88AACC"
+            android:textSize="12sp"
+            android:letterSpacing="0.12" />
+
+        <View
+            android:layout_width="120dp"
+            android:layout_height="2dp"
+            android:layout_marginTop="18dp"
+            android:layout_marginBottom="28dp"
+            android:background="#441A8CFF" />
+
+        <TextView
+            android:id="@+id/btn_play"
+            android:layout_width="220dp"
+            android:layout_height="52dp"
+            android:gravity="center"
+            android:background="@drawable/bg_play_btn"
+            android:text="▶  PLAY"
+            android:textColor="#FFFFFFFF"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.1"
+            android:clickable="true"
+            android:focusable="true"
+            android:elevation="6dp" />
+
+        <TextView
+            android:id="@+id/btn_start_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginTop="14dp"
+            android:paddingStart="18dp"
+            android:paddingEnd="18dp"
+            android:gravity="center"
+            android:background="@drawable/bg_button_blue"
+            android:text="CONFIG"
+            android:textColor="#FF40B8FF"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:clickable="true"
+            android:focusable="true" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:text="Technical prototype"
+        android:textColor="#446688"
+        android:textSize="11sp" />
+</FrameLayout>

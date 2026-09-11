@@ -31,11 +31,11 @@ public final class CarCatalog {
         }
     }
 
-    // Visual-only: roll -90° (clockwise around local +X / nose) so the mesh
+    // Visual-only: roll +90° (counter-clockwise around local +X / nose) so the mesh
     // sits upright on the ground. Physics forward/hitbox unchanged.
     public static final Entry FENNEC = new Entry(
             "fennec", "models/fennec.glb", 122f,
-            new VisualTransform(0f, 0f, -90f, 1f, 0f, 0f, 0f));
+            new VisualTransform(0f, 0f, 90f, 1f, 0f, 0f, 0f));
 
     public static Entry car() { return FENNEC; }
 }

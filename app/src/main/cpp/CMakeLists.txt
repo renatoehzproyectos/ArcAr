@@ -1,6 +1,15 @@
 cmake_minimum_required(VERSION 3.22.1)
 project("ArcArAndroid")
 
+# Optional ccache (CI) — no-op if missing
+find_program(CCACHE_PROGRAM ccache)
+if(CCACHE_PROGRAM)
+  set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+  message(STATUS "Using ccache: ${CCACHE_PROGRAM}")
+endif()
+
+
 set(ARCAR_SRC_DIR    "${CMAKE_CURRENT_SOURCE_DIR}/ArcArLib/src")
 set(ARCAR_LIBSRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ArcArLib/libsrc")
 

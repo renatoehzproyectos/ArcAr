@@ -1,98 +1,152 @@
 #!/usr/bin/env bash
-# push-and-get-apk.sh — commit/push, track Build APK workflow, download APK
-# Uso: bash push-and-get-apk.sh [ruta-del-repo]
+# push → wait Build APK → download artifact → leave APK in Download
 set -euo pipefail
 
 REPO_DIR="${1:-$HOME/ArcAr}"
-if [ -d "$HOME/storage/downloads" ]; then
-  OUT_DIR="${OUT_DIR:-$HOME/storage/downloads/ArcAr-APK}"
-elif [ -d "/storage/emulated/0/Download" ]; then
-  OUT_DIR="${OUT_DIR:-/storage/emulated/0/Download/ArcAr-APK}"
+if [ -d "/storage/emulated/0/Download" ]; then
+  DOWNLOAD="/storage/emulated/0/Download"
+elif [ -d "$HOME/storage/downloads" ]; then
+  DOWNLOAD="$HOME/storage/downloads"
 else
-  OUT_DIR="${OUT_DIR:-$HOME/ArcAr-APK}"
+  DOWNLOAD="${HOME}/Download"
+  mkdir -p "$DOWNLOAD"
 fi
+OUT_DIR="${OUT_DIR:-$DOWNLOAD/ArcAr-APK}"
+APK_EASY="$DOWNLOAD/ArcAr.apk"
 
 mkdir -p "$OUT_DIR"
 cd "$REPO_DIR"
 
-command -v gh >/dev/null || { echo "ERROR: instalá e autenticá GitHub CLI (gh)"; exit 1; }
+command -v gh >/dev/null || { echo "ERROR: instalá gh y hacé: gh auth login"; exit 1; }
 command -v git >/dev/null || { echo "ERROR: falta git"; exit 1; }
+command -v unzip >/dev/null || { echo "ERROR: falta unzip"; exit 1; }
 
 REMOTE=$(git remote | head -1)
 BRANCH=$(git rev-parse --abbrev-ref HEAD)
-SHA_BEFORE=$(git rev-parse HEAD)
-echo "==> $REPO_DIR  remote=$REMOTE  branch=$BRANCH"
+OWNER_REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || true)
+if [ -z "$OWNER_REPO" ]; then
+  # fallback from remote url
+  URL=$(git remote get-url "$REMOTE")
+  OWNER_REPO=$(echo "$URL" | sed -E 's#.*[:/]([^/]+/[^/]+)(\.git)?$#\1#' | sed 's/\.git$//')
+fi
+echo "==> repo=$OWNER_REPO  remote=$REMOTE  branch=$BRANCH  dir=$REPO_DIR"
 
 if [ -n "$(git status --porcelain)" ]; then
   git add -A
   git commit -m "Update ArcAr Android" || true
 fi
-
 SHA=$(git rev-parse HEAD)
-echo "==> Push $REMOTE $BRANCH ($SHA)..."
+echo "==> Push $SHA ..."
 git push "$REMOTE" "$BRANCH"
 
-echo "==> Buscando run de workflow 'Build APK' para este commit..."
+echo "==> Esperando run 'Build APK' para $SHA"
 RUN_ID=""
-for i in $(seq 1 20); do
-  # Prefer run matching our SHA
-  RUN_ID=$(gh run list --workflow="Build APK" --branch="$BRANCH" --limit 5 \
-    --json databaseId,headSha,status \
+for i in $(seq 1 30); do
+  RUN_ID=$(gh run list --workflow="Build APK" --branch="$BRANCH" --limit 8 \
+    --json databaseId,headSha,status,createdAt \
     --jq ".[] | select(.headSha==\"$SHA\") | .databaseId" 2>/dev/null | head -1 || true)
   if [ -n "$RUN_ID" ]; then
+    echo "   encontrado run=$RUN_ID (intento $i)"
     break
   fi
-  echo "   [$i/20] run aún no visible..."
-  sleep 3
+  printf "   [%2d/30] aún no aparece...\n" "$i"
+  sleep 2
 done
-
 if [ -z "$RUN_ID" ]; then
-  echo "ERROR: no apareció el run. Últimos runs:"
+  echo "ERROR: no hay run para este commit"
   gh run list --workflow="Build APK" --limit 5 || true
   exit 1
 fi
 
-echo "==> Run #$RUN_ID — siguiendo progreso"
-# gh run watch imprime estado en vivo; si falla usamos poll
-if gh run watch "$RUN_ID" --exit-status 2>/dev/null; then
-  :
-else
-  # Fallback poll con % aproximado
+echo "==> Esperando a que termine el build (run $RUN_ID)"
+# Prefer gh run watch; poll fallback with progress
+if ! gh run watch "$RUN_ID" --exit-status 2>/dev/null; then
   while true; do
-    VIEW=$(gh run view "$RUN_ID" --json status,conclusion,jobs 2>/dev/null || echo '{}')
-    STATUS=$(echo "$VIEW" | grep -o '"status":"[^"]*"' | head -1 | cut -d'"' -f4)
-    CONCLUSION=$(echo "$VIEW" | grep -o '"conclusion":"[^"]*"' | head -1 | cut -d'"' -f4)
-    # steps: completed vs total
-    COMP=$(echo "$VIEW" | grep -c '"status":"completed"' || true)
-    TOTAL=$(echo "$VIEW" | grep -c '"name":' || true)
-    if [ "${TOTAL:-0}" -gt 0 ]; then
-      PCT=$((COMP * 100 / TOTAL))
-      [ "$PCT" -gt 99 ] && [ "$STATUS" != "completed" ] && PCT=95
-    else
-      case "$STATUS" in queued) PCT=5;; in_progress) PCT=45;; completed) PCT=100;; *) PCT=15;; esac
+    VIEW=$(gh run view "$RUN_ID" --json status,conclusion 2>/dev/null || echo '{}')
+    STATUS=$(echo "$VIEW" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p' | head -1)
+    CONCLUSION=$(echo "$VIEW" | sed -n 's/.*"conclusion":"\([^"]*\)".*/\1/p' | head -1)
+    case "$STATUS" in
+      queued) PCT=8 ;;
+      waiting) PCT=12 ;;
+      in_progress) PCT=55 ;;
+      completed) PCT=100 ;;
+      *) PCT=20 ;;
+    esac
+    printf "\r   [%3d%%] status=%s conclusion=%s   " "$PCT" "${STATUS:-?}" "${CONCLUSION:-…}"
+    if [ "$STATUS" = "completed" ]; then
+      echo
+      break
     fi
-    printf "\r   [%3d%%] %s %s    " "$PCT" "$STATUS" "${CONCLUSION:-}"
-    [ "$STATUS" = "completed" ] && echo && break
-    sleep 6
+    sleep 5
   done
-  [ "${CONCLUSION:-}" = "success" ] || { echo "ERROR: build=$CONCLUSION"; gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -60; exit 1; }
+  if [ "${CONCLUSION:-}" != "success" ]; then
+    echo "ERROR: build falló ($CONCLUSION)"
+    gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -80 || true
+    exit 1
+  fi
 fi
 
-echo "==> Descargando artifact → $OUT_DIR"
-rm -rf "${OUT_DIR:?}/"*
-cd "$OUT_DIR"
-gh run download "$RUN_ID" -n arcar-debug-apk
+echo "==> Descargando artifact arcar-debug-apk"
+rm -rf "${OUT_DIR:?}"
+mkdir -p "$OUT_DIR"
+TMP="$OUT_DIR/.dl"
+mkdir -p "$TMP"
+cd "$TMP"
 
-APK=$(find . -name 'app-debug.apk' -type f | head -1)
+download_ok=0
+
+# Method 1: gh run download (extracts automatically in recent gh)
+if gh run download "$RUN_ID" -n arcar-debug-apk -D "$TMP" 2>"$OUT_DIR/gh-download.err"; then
+  download_ok=1
+else
+  echo "   gh run download falló, probando API zip..."
+  # Method 2: REST API → artifact zip
+  ART_ID=$(gh api "repos/$OWNER_REPO/actions/runs/$RUN_ID/artifacts" \
+    --jq '.artifacts[] | select(.name=="arcar-debug-apk") | .id' 2>/dev/null | head -1 || true)
+  if [ -n "$ART_ID" ]; then
+    echo "   artifact id=$ART_ID"
+    if gh api "repos/$OWNER_REPO/actions/artifacts/$ART_ID/zip" > "$TMP/artifact.zip" 2>/dev/null; then
+      if [ -s "$TMP/artifact.zip" ]; then
+        unzip -qo "$TMP/artifact.zip" -d "$TMP"
+        download_ok=1
+      fi
+    fi
+  fi
+fi
+
+if [ "$download_ok" != 1 ]; then
+  echo "ERROR: no se pudo descargar el artifact"
+  cat "$OUT_DIR/gh-download.err" 2>/dev/null || true
+  ls -la "$TMP" || true
+  exit 1
+fi
+
+# Any nested zips
+find "$TMP" -name '*.zip' -type f | while read -r z; do
+  unzip -qo "$z" -d "$TMP" || true
+done
+
+APK=$(find "$TMP" -name 'app-debug.apk' -type f | head -1)
 if [ -z "$APK" ]; then
-  for z in ./*.zip; do [ -f "$z" ] && unzip -qo "$z"; done
-  APK=$(find . -name 'app-debug.apk' -type f | head -1)
+  APK=$(find "$TMP" -name '*.apk' -type f | head -1)
 fi
-[ -n "$APK" ] || { echo "ERROR: sin app-debug.apk"; find . -type f; exit 1; }
+if [ -z "$APK" ]; then
+  echo "ERROR: no hay .apk dentro del artifact. Contenido:"
+  find "$TMP" -type f | head -40
+  exit 1
+fi
 
 cp -f "$APK" "$OUT_DIR/app-debug.apk"
+cp -f "$APK" "$APK_EASY"
+# cleanup temp
+rm -rf "$TMP"
+
+SIZE=$(ls -lh "$APK_EASY" | awk '{print $5}')
 echo ""
 echo "============================================"
-echo " APK listo: $OUT_DIR/app-debug.apk"
-echo " Instalar:  adb install -r $OUT_DIR/app-debug.apk"
+echo " APK listo ($SIZE):"
+echo "   $APK_EASY"
+echo "   $OUT_DIR/app-debug.apk"
+echo " Abrí el archivo desde Descargas o:"
+echo "   adb install -r $APK_EASY"
 echo "============================================"

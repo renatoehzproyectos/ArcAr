@@ -5,10 +5,15 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Assemble debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -19,25 +24,27 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
+          cache: gradle
 
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
         with:
-          cache-read-only: false
+          key: arcar-ndk-${{ runner.os }}
+          max-size: 800M
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Cache Android SDK packages (NDK / CMake / build-tools)
+      - name: Cache SDK components
         id: cache-sdk
         uses: actions/cache@v4
         with:
           path: |
-            ${{ env.ANDROID_HOME }}/ndk
+            ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
             ${{ env.ANDROID_HOME }}/cmake
-            ${{ env.ANDROID_HOME }}/build-tools
-            ${{ env.ANDROID_HOME }}/platforms
-          key: android-sdk-34-ndk-26.1.10909125-cmake-3.22.1
+            ${{ env.ANDROID_HOME }}/build-tools/34.0.0
+            ${{ env.ANDROID_HOME }}/platforms/android-34
+          key: sdk-34-ndk26.1-cmake3.22.1-v2
 
       - name: Install SDK packages
         if: steps.cache-sdk.outputs.cache-hit != 'true'
@@ -50,26 +57,30 @@ jobs:
             "cmake;3.22.1"
           yes | sdkmanager --licenses >/dev/null || true
 
-      - name: Ensure SDK packages present
+      - name: Build debug APK
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          ANDROID_NDK_ROOT: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+          CMAKE_BUILD_PARALLEL_LEVEL: 4
+          CCACHE_DIR: ${{ github.workspace }}/.ccache
         run: |
           set -e
-          # Re-install if cache was partial / missing pieces
-          for pkg in "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" "cmake;3.22.1"; do
-            sdkmanager --install "$pkg" >/dev/null 2>&1 || true
-          done
-          yes | sdkmanager --licenses >/dev/null || true
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/ndk" || true
-
-      - name: Make gradlew executable
-        run: chmod +x gradlew
-
-      - name: Build debug APK
-        run: |
-          export ANDROID_NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          export ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
-          echo "Using NDK at $ANDROID_NDK_HOME"
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          chmod +x gradlew
+          # Point CMake at ccache when available
+          export PATH="/usr/lib/ccache:$PATH"
+          which ccache || true
+          ccache -s || true
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --parallel \
+            --build-cache \
+            -Dorg.gradle.caching=true \
+            -Dorg.gradle.parallel=true \
+            -Dorg.gradle.jvmargs="-Xmx3g -XX:+UseParallelGC" \
+            -Pandroid.injected.build.abi=arm64-v8a \
+            --stacktrace
+          ccache -s || true
+          ls -lh app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -77,15 +88,5 @@ jobs:
           name: arcar-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          retention-days: 7
-
-      - name: Upload build outputs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-failure-logs
-          path: |
-            app/build/**
-            **/*.log
-          if-no-files-found: ignore
-          retention-days: 3
+          retention-days: 5
+          compression-level: 0

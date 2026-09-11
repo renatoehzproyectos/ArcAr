@@ -81,7 +81,7 @@ fi
 echo "==> Descargando artifact → $OUT_DIR"
 rm -rf "${OUT_DIR:?}/"*
 cd "$OUT_DIR"
-gh run download "$RUN_ID" -n arcar-debug-apk
+gh run download "$RUN_ID" --repo "renatoehzproyectos/ArcAr" -n arcar-debug-apk
 
 APK=$(find . -name 'app-debug.apk' -type f | head -1)
 if [ -z "$APK" ]; then

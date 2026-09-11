@@ -1,8 +1,10 @@
 package com.arcar.android;
 
+import android.content.Context;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 import android.opengl.Matrix;
+import android.util.Log;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -12,19 +14,12 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 /**
- * ArcAr Alpha 0.1 — minimal renderer.
- * Draws: simple car box (aligned to physics hitbox), ball sphere, flat ground plane.
- * Chase / ball camera only. No GLB, VFX, particles, shadows, stadium, HUD.
+ * Alpha 0.1 renderer + Fennec GLB car.
+ * Ball = sphere, ground = plane. No stadium/VFX/HUD.
  */
 public class GameRenderer implements GLSurfaceView.Renderer {
+    private static final String TAG = "GameRenderer";
 
-    // Snapshot layout (must match jni_bridge.cpp)
-    // 0-2 carPos, 3-5 carForward, 6-8 carUp, 9-11 carRight,
-    // 12-14 ballPos, 15 ballRadius,
-    // 16-18 camPos, 19-21 camTarget,
-    // 22 boost, 23 speed, 24 ballCam, 25 onGround, 26 boosting, 27 super,
-    // 28 tick, 29 ready, 30 fov, 31 shake, 32 ballSpeed, 33 impact, 34 goal,
-    // 35-37 carVel, 38-39 ballVel.x/y
     private final float[] snapshot = new float[40];
     private final Object snapLock = new Object();
 
@@ -34,26 +29,41 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private final float[] model = new float[16];
     private final float[] tmp = new float[16];
     private final float[] tmp2 = new float[16];
+    private final float[] corrM = new float[16];
+    private final float[] offsetM = new float[16];
+    private final float[] orientedM = new float[16];
     private final float[] lightDir = new float[]{0.4f, 0.25f, 0.85f};
+    private final float[] currentCameraPos = new float[3];
 
     private FloatBuffer cubePN;
     private FloatBuffer spherePN;
     private FloatBuffer planePN;
     private int sphereVertexCount;
 
+    // Simple (box/sphere/plane) program
     private int program;
     private int aPos, aNrm, uMVP, uModel, uColor, uLightDir, uAmbient, uEmissive;
 
+    // Textured mesh program (GLB)
+    private int meshProgram;
+    private int mAPos, mANrm, mAUv, mUMVP, mUModel, mUColor, mULight, mUAmbient, mUEmissive;
+    private int mUTex, mUUseTex, mUCameraPos, mUEmissiveFactor, mUMetallic, mURoughness;
+
+    private final AssetStore assets = new AssetStore();
+    private Context appCtx;
     private volatile boolean engineReady = false;
-    private int width, height;
+    private int width = 1, height = 1;
     private long lastNs;
 
-    // BODY_C hitbox full size (UU): length(X/forward)=131.32, width(Y/right)=87.17, height(Z/up)=31.89
     private static final float HITBOX_LEN = 131.32f;
     private static final float HITBOX_WID = 87.1704f;
     private static final float HITBOX_HGT = 31.8944f;
 
     public void setEngineReady(boolean ready) { engineReady = ready; }
+
+    public void setContext(Context ctx) {
+        appCtx = ctx != null ? ctx.getApplicationContext() : null;
+    }
 
     @Override
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
@@ -62,6 +72,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         GLES20.glEnable(GLES20.GL_CULL_FACE);
         GLES20.glDisable(GLES20.GL_BLEND);
 
+        // --- simple lit shader ---
         String vs =
             "uniform mat4 uMVP;\n" +
             "uniform mat4 uModel;\n" +
@@ -86,7 +97,6 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             "  vec3 col = uColor.rgb * light + uColor.rgb * uEmissive;\n" +
             "  gl_FragColor = vec4(col, uColor.a);\n" +
             "}\n";
-
         program = link(vs, fs);
         aPos = GLES20.glGetAttribLocation(program, "aPos");
         aNrm = GLES20.glGetAttribLocation(program, "aNrm");
@@ -97,10 +107,90 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         uAmbient = GLES20.glGetUniformLocation(program, "uAmbient");
         uEmissive = GLES20.glGetUniformLocation(program, "uEmissive");
 
+        // --- GLB mesh shader (textures + simple PBR-lite) ---
+        String mvs =
+            "uniform mat4 uMVP;\n" +
+            "uniform mat4 uModel;\n" +
+            "attribute vec3 aPos;\n" +
+            "attribute vec3 aNrm;\n" +
+            "attribute vec2 aUv;\n" +
+            "varying vec3 vN;\n" +
+            "varying vec2 vUv;\n" +
+            "varying vec3 vWorldPos;\n" +
+            "void main(){\n" +
+            "  vN = mat3(uModel) * aNrm;\n" +
+            "  vUv = aUv;\n" +
+            "  vWorldPos = (uModel * vec4(aPos,1.0)).xyz;\n" +
+            "  gl_Position = uMVP * vec4(aPos,1.0);\n" +
+            "}\n";
+        String mfs =
+            "precision mediump float;\n" +
+            "varying vec3 vN;\n" +
+            "varying vec2 vUv;\n" +
+            "varying vec3 vWorldPos;\n" +
+            "uniform vec4 uColor;\n" +
+            "uniform vec3 uLightDir;\n" +
+            "uniform vec3 uCameraPos;\n" +
+            "uniform float uAmbient;\n" +
+            "uniform float uEmissive;\n" +
+            "uniform vec3 uEmissiveFactor;\n" +
+            "uniform float uMetallic;\n" +
+            "uniform float uRoughness;\n" +
+            "uniform sampler2D uTex;\n" +
+            "uniform float uUseTex;\n" +
+            "void main(){\n" +
+            "  vec3 n = normalize(vN);\n" +
+            "  vec3 l = normalize(uLightDir);\n" +
+            "  vec3 v = normalize(uCameraPos - vWorldPos);\n" +
+            "  vec3 h = normalize(l + v);\n" +
+            "  float ndl = max(dot(n, l), 0.0);\n" +
+            "  float ndv = max(dot(n, v), 0.0);\n" +
+            "  float ndh = max(dot(n, h), 0.0);\n" +
+            "  float shininess = mix(128.0, 4.0, uRoughness);\n" +
+            "  float specStrength = mix(0.06, 0.9, uMetallic);\n" +
+            "  float spec = pow(ndh, shininess) * specStrength;\n" +
+            "  float fresnel = pow(1.0 - ndv, 5.0);\n" +
+            "  float fresnelStrength = mix(0.04, 0.6, uMetallic);\n" +
+            "  vec4 texC = (uUseTex > 0.5) ? texture2D(uTex, vUv) : vec4(1.0);\n" +
+            "  vec3 baseCol = uColor.rgb * texC.rgb;\n" +
+            "  vec3 specCol = mix(vec3(1.0), baseCol, uMetallic);\n" +
+            "  float diffuseAmt = (1.0 - uMetallic);\n" +
+            "  vec3 diffuse = baseCol * diffuseAmt * (uAmbient + (1.0 - uAmbient) * ndl);\n" +
+            "  vec3 color = diffuse + specCol * spec + specCol * fresnel * fresnelStrength;\n" +
+            "  color += (baseCol * uEmissive) + uEmissiveFactor;\n" +
+            "  color = color / (color + vec3(1.0));\n" +
+            "  color = pow(color, vec3(1.0/2.2));\n" +
+            "  gl_FragColor = vec4(color, uColor.a * texC.a);\n" +
+            "}\n";
+        meshProgram = link(mvs, mfs);
+        mAPos = GLES20.glGetAttribLocation(meshProgram, "aPos");
+        mANrm = GLES20.glGetAttribLocation(meshProgram, "aNrm");
+        mAUv = GLES20.glGetAttribLocation(meshProgram, "aUv");
+        mUMVP = GLES20.glGetUniformLocation(meshProgram, "uMVP");
+        mUModel = GLES20.glGetUniformLocation(meshProgram, "uModel");
+        mUColor = GLES20.glGetUniformLocation(meshProgram, "uColor");
+        mULight = GLES20.glGetUniformLocation(meshProgram, "uLightDir");
+        mUAmbient = GLES20.glGetUniformLocation(meshProgram, "uAmbient");
+        mUEmissive = GLES20.glGetUniformLocation(meshProgram, "uEmissive");
+        mUTex = GLES20.glGetUniformLocation(meshProgram, "uTex");
+        mUUseTex = GLES20.glGetUniformLocation(meshProgram, "uUseTex");
+        mUCameraPos = GLES20.glGetUniformLocation(meshProgram, "uCameraPos");
+        mUEmissiveFactor = GLES20.glGetUniformLocation(meshProgram, "uEmissiveFactor");
+        mUMetallic = GLES20.glGetUniformLocation(meshProgram, "uMetallic");
+        mURoughness = GLES20.glGetUniformLocation(meshProgram, "uRoughness");
+
         cubePN = buildCubePN();
         spherePN = buildSpherePN(12, 16);
-        planePN = buildPlanePN(12000f); // huge flat ground visual
+        planePN = buildPlanePN(12000f);
         lastNs = System.nanoTime();
+
+        if (appCtx != null) {
+            try {
+                assets.loadCar(appCtx);
+            } catch (Throwable t) {
+                Log.e(TAG, "Fennec load failed", t);
+            }
+        }
     }
 
     @Override
@@ -128,14 +218,17 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             } catch (Throwable ignored) {}
         }
 
+        // Lazy load if context arrived after surface created
+        if (assets.car == null && appCtx != null) {
+            try { assets.loadCar(appCtx); } catch (Throwable ignored) {}
+        }
+
         float[] s;
         synchronized (snapLock) {
             s = snapshot.clone();
         }
 
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
-        GLES20.glUseProgram(program);
-        GLES20.glUniform3fv(uLightDir, 1, lightDir, 0);
 
         float fov = s[30] > 10f ? s[30] : 70f;
         float aspect = (float) width / (float) height;
@@ -143,71 +236,140 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
         float cx = s[16], cy = s[17], cz = s[18];
         float tx = s[19], ty = s[20], tz = s[21];
-        // Fallback camera if snapshot not ready
         if (!engineReady || s[29] < 0.5f) {
             cx = 0; cy = -800; cz = 300;
             tx = 0; ty = 0; tz = 50;
         }
+        currentCameraPos[0] = cx;
+        currentCameraPos[1] = cy;
+        currentCameraPos[2] = cz;
         Matrix.setLookAtM(view, 0, cx, cy, cz, tx, ty, tz, 0f, 0f, 1f);
 
-        // Ground plane at z=0
+        GLES20.glUseProgram(program);
+        GLES20.glUniform3fv(uLightDir, 1, lightDir, 0);
         drawGround();
 
         if (engineReady && s[29] > 0.5f) {
-            // Car box — orientation from physics (forward / right / up)
             float px = s[0], py = s[1], pz = s[2];
             float fx = s[3], fy = s[4], fz = s[5];
             float ux = s[6], uy = s[7], uz = s[8];
             float rx = s[9], ry = s[10], rz = s[11];
-            drawCarBox(px, py, pz, fx, fy, fz, ux, uy, uz, rx, ry, rz);
 
-            // Ball sphere
+            if (assets.car != null && !assets.car.primitives.isEmpty()) {
+                drawFennec(px, py, pz, fx, fy, fz, ux, uy, uz, rx, ry, rz);
+            } else {
+                // Fallback box if GLB failed
+                drawCarBox(px, py, pz, fx, fy, fz, ux, uy, uz, rx, ry, rz);
+            }
+
             float bx = s[12], by = s[13], bz = s[14];
             float br = s[15] > 1f ? s[15] : 91.25f;
+            GLES20.glUseProgram(program);
+            GLES20.glUniform3fv(uLightDir, 1, lightDir, 0);
             drawSphere(bx, by, bz, br, 0.95f, 0.85f, 0.15f);
         }
     }
 
     /**
-     * Visual box aligned to physics hitbox.
-     * Physics local: X=forward, Y=right, Z=up. hitboxSize = (len, wid, hgt).
-     * Matrix columns: col0=right, col1=forward, col2=up so scale (wid, len, hgt).
+     * Fennec: physics basis is source of truth.
+     * Local +X (GLB long axis) → physics forward.
+     * model columns: [forward | right | up | pos]
      */
+    private void drawFennec(float x, float y, float z,
+                            float fx, float fy, float fz,
+                            float ux, float uy, float uz,
+                            float rx, float ry, float rz) {
+        GlbModel glb = assets.car;
+        CarCatalog.VisualTransform visual = CarCatalog.car().visual;
+
+        Matrix.setIdentityM(model, 0);
+        model[0] = fx; model[1] = fy; model[2] = fz;
+        model[4] = rx; model[5] = ry; model[6] = rz;
+        model[8] = ux; model[9] = uy; model[10] = uz;
+        model[12] = x; model[13] = y; model[14] = z;
+
+        if (visual != null && (visual.yawDeg != 0f || visual.pitchDeg != 0f || visual.rollDeg != 0f
+                || visual.scale != 1f || visual.offsetX != 0f || visual.offsetY != 0f || visual.offsetZ != 0f)) {
+            Matrix.setIdentityM(corrM, 0);
+            if (visual.yawDeg != 0f) Matrix.rotateM(corrM, 0, visual.yawDeg, 0f, 0f, 1f);
+            if (visual.pitchDeg != 0f) Matrix.rotateM(corrM, 0, visual.pitchDeg, 0f, 1f, 0f);
+            if (visual.rollDeg != 0f) Matrix.rotateM(corrM, 0, visual.rollDeg, 1f, 0f, 0f);
+            if (visual.scale != 1f) Matrix.scaleM(corrM, 0, visual.scale, visual.scale, visual.scale);
+            if (visual.offsetX != 0f || visual.offsetY != 0f || visual.offsetZ != 0f) {
+                Matrix.setIdentityM(offsetM, 0);
+                Matrix.translateM(offsetM, 0, visual.offsetX, visual.offsetY, visual.offsetZ);
+                Matrix.multiplyMM(corrM, 0, offsetM, 0, corrM, 0);
+            }
+            Matrix.multiplyMM(orientedM, 0, model, 0, corrM, 0);
+            System.arraycopy(orientedM, 0, model, 0, 16);
+        }
+
+        GLES20.glUseProgram(meshProgram);
+        GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);
+        GLES20.glUniform3f(mUCameraPos, currentCameraPos[0], currentCameraPos[1], currentCameraPos[2]);
+
+        for (GlbModel.Primitive prim : glb.primitives) {
+            Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
+            Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
+            GLES20.glUniformMatrix4fv(mUMVP, 1, false, mvp, 0);
+            GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
+            GLES20.glUniform4f(mUColor, prim.baseColor[0], prim.baseColor[1], prim.baseColor[2], prim.baseColor[3]);
+            GLES20.glUniform1f(mUAmbient, 0.4f);
+            GLES20.glUniform1f(mUEmissive, 0.05f);
+            GLES20.glUniform3f(mUEmissiveFactor, prim.emissiveFactor[0], prim.emissiveFactor[1], prim.emissiveFactor[2]);
+            GLES20.glUniform1f(mUMetallic, prim.metallic);
+            GLES20.glUniform1f(mURoughness, prim.roughness);
+
+            if ("BLEND".equals(prim.alphaMode)) {
+                GLES20.glEnable(GLES20.GL_BLEND);
+                GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+                GLES20.glDepthMask(false);
+            } else {
+                GLES20.glDisable(GLES20.GL_BLEND);
+                GLES20.glDepthMask(true);
+            }
+            if (prim.doubleSided) GLES20.glDisable(GLES20.GL_CULL_FACE);
+            else GLES20.glEnable(GLES20.GL_CULL_FACE);
+
+            boolean useTex = prim.textureId > 0;
+            GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
+            if (useTex) {
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, prim.textureId);
+                GLES20.glUniform1i(mUTex, 0);
+            }
+            prim.interleaved.position(0);
+            GLES20.glEnableVertexAttribArray(mAPos);
+            GLES20.glVertexAttribPointer(mAPos, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(3);
+            GLES20.glEnableVertexAttribArray(mANrm);
+            GLES20.glVertexAttribPointer(mANrm, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(6);
+            GLES20.glEnableVertexAttribArray(mAUv);
+            GLES20.glVertexAttribPointer(mAUv, 2, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.indices.position(0);
+            GLES20.glDrawElements(GLES20.GL_TRIANGLES, prim.indexCount, prim.indexType, prim.indices);
+        }
+        GLES20.glDisable(GLES20.GL_BLEND);
+        GLES20.glDepthMask(true);
+        GLES20.glEnable(GLES20.GL_CULL_FACE);
+        GLES20.glUseProgram(program);
+    }
+
     private void drawCarBox(float x, float y, float z,
                             float fx, float fy, float fz,
                             float ux, float uy, float uz,
                             float rx, float ry, float rz) {
         Matrix.setIdentityM(model, 0);
-        // Column-major: X axis = right, Y axis = forward, Z axis = up
         model[0] = rx; model[1] = ry; model[2] = rz;
         model[4] = fx; model[5] = fy; model[6] = fz;
         model[8] = ux; model[9] = uy; model[10] = uz;
         model[12] = x; model[13] = y; model[14] = z;
-
         Matrix.setIdentityM(tmp2, 0);
-        // Full hitbox size as scale of unit cube (-0.5..0.5)
         Matrix.scaleM(tmp2, 0, HITBOX_WID, HITBOX_LEN, HITBOX_HGT);
         Matrix.multiplyMM(tmp, 0, model, 0, tmp2, 0);
         System.arraycopy(tmp, 0, model, 0, 16);
-
-        // Body
         drawMesh(cubePN, 36, 0.25f, 0.55f, 0.95f, 1f, 0.35f, 0.05f);
-
-        // Nose marker (front tip) so forward direction is obvious
-        Matrix.setIdentityM(model, 0);
-        model[0] = rx; model[1] = ry; model[2] = rz;
-        model[4] = fx; model[5] = fy; model[6] = fz;
-        model[8] = ux; model[9] = uy; model[10] = uz;
-        // Offset to front of hitbox
-        float noseOff = HITBOX_LEN * 0.5f + 8f;
-        model[12] = x + fx * noseOff;
-        model[13] = y + fy * noseOff;
-        model[14] = z + fz * noseOff;
-        Matrix.setIdentityM(tmp2, 0);
-        Matrix.scaleM(tmp2, 0, HITBOX_WID * 0.35f, 16f, HITBOX_HGT * 0.6f);
-        Matrix.multiplyMM(tmp, 0, model, 0, tmp2, 0);
-        System.arraycopy(tmp, 0, model, 0, 16);
-        drawMesh(cubePN, 36, 1f, 0.35f, 0.1f, 1f, 0.4f, 0.15f);
     }
 
     private void drawSphere(float x, float y, float z, float radius,
@@ -220,7 +382,6 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
     private void drawGround() {
         Matrix.setIdentityM(model, 0);
-        // plane is XY at z=0, already large
         drawMesh(planePN, 6, 0.22f, 0.28f, 0.22f, 1f, 0.55f, 0f);
     }
 
@@ -243,25 +404,18 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, verts);
     }
 
-    // Unit cube centered at origin, pos+normal interleaved (6 floats), 36 verts
     private static FloatBuffer buildCubePN() {
         float[] v = {
-            // +Z
             -0.5f,-0.5f, 0.5f,  0,0,1,   0.5f,-0.5f, 0.5f,  0,0,1,   0.5f, 0.5f, 0.5f,  0,0,1,
             -0.5f,-0.5f, 0.5f,  0,0,1,   0.5f, 0.5f, 0.5f,  0,0,1,  -0.5f, 0.5f, 0.5f,  0,0,1,
-            // -Z
              0.5f,-0.5f,-0.5f,  0,0,-1, -0.5f,-0.5f,-0.5f,  0,0,-1, -0.5f, 0.5f,-0.5f,  0,0,-1,
              0.5f,-0.5f,-0.5f,  0,0,-1, -0.5f, 0.5f,-0.5f,  0,0,-1,  0.5f, 0.5f,-0.5f,  0,0,-1,
-            // +Y
             -0.5f, 0.5f, 0.5f,  0,1,0,   0.5f, 0.5f, 0.5f,  0,1,0,   0.5f, 0.5f,-0.5f,  0,1,0,
             -0.5f, 0.5f, 0.5f,  0,1,0,   0.5f, 0.5f,-0.5f,  0,1,0,  -0.5f, 0.5f,-0.5f,  0,1,0,
-            // -Y
             -0.5f,-0.5f,-0.5f,  0,-1,0,  0.5f,-0.5f,-0.5f,  0,-1,0,  0.5f,-0.5f, 0.5f,  0,-1,0,
             -0.5f,-0.5f,-0.5f,  0,-1,0,  0.5f,-0.5f, 0.5f,  0,-1,0, -0.5f,-0.5f, 0.5f,  0,-1,0,
-            // +X
              0.5f,-0.5f, 0.5f,  1,0,0,   0.5f,-0.5f,-0.5f,  1,0,0,   0.5f, 0.5f,-0.5f,  1,0,0,
              0.5f,-0.5f, 0.5f,  1,0,0,   0.5f, 0.5f,-0.5f,  1,0,0,   0.5f, 0.5f, 0.5f,  1,0,0,
-            // -X
             -0.5f,-0.5f,-0.5f, -1,0,0,  -0.5f,-0.5f, 0.5f, -1,0,0,  -0.5f, 0.5f, 0.5f, -1,0,0,
             -0.5f,-0.5f,-0.5f, -1,0,0,  -0.5f, 0.5f, 0.5f, -1,0,0,  -0.5f, 0.5f,-0.5f, -1,0,0,
         };
@@ -285,7 +439,6 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                 float x01 = r0 * (float) Math.cos(p1), z01 = r0 * (float) Math.sin(p1);
                 float x10 = r1 * (float) Math.cos(p0), z10 = r1 * (float) Math.sin(p0);
                 float x11 = r1 * (float) Math.cos(p1), z11 = r1 * (float) Math.sin(p1);
-                // two tris
                 i = put(v, i, x00, y0, z00); i = put(v, i, x10, y1, z10); i = put(v, i, x11, y1, z11);
                 i = put(v, i, x00, y0, z00); i = put(v, i, x11, y1, z11); i = put(v, i, x01, y0, z01);
             }
@@ -294,13 +447,11 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     }
 
     private static int put(float[] v, int i, float x, float y, float z) {
-        // pos + normal (unit sphere)
         v[i++] = x; v[i++] = y; v[i++] = z;
         v[i++] = x; v[i++] = y; v[i++] = z;
         return i;
     }
 
-    /** Flat XY plane centered at origin, normal +Z. */
     private static FloatBuffer buildPlanePN(float half) {
         float[] v = {
             -half, -half, 0,  0,0,1,

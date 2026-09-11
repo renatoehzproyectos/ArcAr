@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
         glView = findViewById(R.id.gl_surface);
         glView.setEGLContextClientVersion(2);
         renderer = new GameRenderer();
+        renderer.setContext(this);
         renderer.setEngineReady(false);
         glView.setRenderer(renderer);
         glView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);

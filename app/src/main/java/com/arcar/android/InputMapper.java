@@ -44,31 +44,24 @@ public class InputMapper {
     private boolean infiniteBoost = false;
 
     public InputMapper(Context ctx) {
-        prefs = ctx.getSharedPreferences("arcar_bindings_v3", Context.MODE_PRIVATE);
+        prefs = ctx.getSharedPreferences("arcar_bindings_v4", Context.MODE_PRIVATE);
         ensureDefaults();
         infiniteBoost = prefs.getBoolean("infinite_boost", false);
     }
 
     private void ensureDefaults() {
         SharedPreferences.Editor e = prefs.edit();
-        // One primary bind each; same key MAY appear on multiple actions intentionally
-        putDefault(e, Action.JUMP, KeyEvent.KEYCODE_BUTTON_A);
-        putDefault(e, Action.BOOST, KeyEvent.KEYCODE_BUTTON_B);
-        putDefault(e, Action.POWERSLIDE, KeyEvent.KEYCODE_BUTTON_X);
-        putDefault(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_BUTTON_L1);
-        putDefault(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_BUTTON_R1);
-        putDefault(e, Action.ACCELERATE, KeyEvent.KEYCODE_W);
-        putDefault(e, Action.DECELERATE, KeyEvent.KEYCODE_S);
-        putDefault(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_BUTTON_Y);
-        // Keyboard secondaries stored as extra list entries — see getKeycodes
-        putDefaultExtra(e, Action.JUMP, KeyEvent.KEYCODE_SPACE);
-        putDefaultExtra(e, Action.BOOST, KeyEvent.KEYCODE_SHIFT_LEFT);
-        putDefaultExtra(e, Action.POWERSLIDE, KeyEvent.KEYCODE_CTRL_LEFT);
-        putDefaultExtra(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_Q);
-        putDefaultExtra(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_E);
-        putDefaultExtra(e, Action.ACCELERATE, KeyEvent.KEYCODE_DPAD_UP);
-        putDefaultExtra(e, Action.DECELERATE, KeyEvent.KEYCODE_DPAD_DOWN);
-        putDefaultExtra(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_C);
+        // Defaults = captura CONTROLES (solo mando, sin teclado).
+        // Una misma tecla puede ir a varias acciones (L1/L2 compartidos).
+        // Face: Cross(A) se muestra "X", Square(X) se muestra "□".
+        putDefault(e, Action.JUMP, KeyEvent.KEYCODE_BUTTON_R1);          // R1
+        putDefault(e, Action.BOOST, KeyEvent.KEYCODE_BUTTON_A);          // X (Cross)
+        putDefault(e, Action.ACCELERATE, KeyEvent.KEYCODE_BUTTON_R2);    // R2
+        putDefault(e, Action.DECELERATE, KeyEvent.KEYCODE_BUTTON_L2);    // L2
+        putDefault(e, Action.POWERSLIDE, KeyEvent.KEYCODE_BUTTON_L1);    // L1
+        putDefault(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_BUTTON_X); // □ (Square)
+        putDefault(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_BUTTON_L1); // L1
+        putDefault(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_BUTTON_L2);  // L2
         if (!prefs.contains("infinite_boost")) e.putBoolean("infinite_boost", false);
         e.apply();
     }
@@ -91,18 +84,9 @@ public class InputMapper {
     }
 
     private void seedExtrasOnce() {
-        if (prefs.getBoolean("seeded_extras_v3", false)) return;
-        SharedPreferences.Editor e = prefs.edit();
-        appendKey(e, Action.JUMP, KeyEvent.KEYCODE_SPACE);
-        appendKey(e, Action.BOOST, KeyEvent.KEYCODE_SHIFT_LEFT);
-        appendKey(e, Action.POWERSLIDE, KeyEvent.KEYCODE_CTRL_LEFT);
-        appendKey(e, Action.AIR_ROLL_LEFT, KeyEvent.KEYCODE_Q);
-        appendKey(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_E);
-        appendKey(e, Action.ACCELERATE, KeyEvent.KEYCODE_DPAD_UP);
-        appendKey(e, Action.DECELERATE, KeyEvent.KEYCODE_DPAD_DOWN);
-        appendKey(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_C);
-        e.putBoolean("seeded_extras_v3", true);
-        e.apply();
+        // No keyboard secondary binds — defaults are gamepad-only (see ensureDefaults).
+        if (prefs.getBoolean("seeded_extras_v4", false)) return;
+        prefs.edit().putBoolean("seeded_extras_v4", true).apply();
     }
 
     private static String keysPref(Action a) {
@@ -310,10 +294,11 @@ public class InputMapper {
     public static String keyCodeLabel(int keyCode) {
         if (keyCode == UNBOUND) return "—";
         switch (keyCode) {
-            case KeyEvent.KEYCODE_BUTTON_A: return "A";
-            case KeyEvent.KEYCODE_BUTTON_B: return "B";
-            case KeyEvent.KEYCODE_BUTTON_X: return "X";
-            case KeyEvent.KEYCODE_BUTTON_Y: return "Y";
+            // PlayStation-style face labels (match settings UI screenshot)
+            case KeyEvent.KEYCODE_BUTTON_A: return "X";   // Cross
+            case KeyEvent.KEYCODE_BUTTON_B: return "○";   // Circle
+            case KeyEvent.KEYCODE_BUTTON_X: return "□";   // Square
+            case KeyEvent.KEYCODE_BUTTON_Y: return "△";   // Triangle
             case KeyEvent.KEYCODE_BUTTON_L1: return "L1";
             case KeyEvent.KEYCODE_BUTTON_R1: return "R1";
             case KeyEvent.KEYCODE_BUTTON_L2: return "L2";
@@ -326,9 +311,6 @@ public class InputMapper {
             case KeyEvent.KEYCODE_DPAD_DOWN: return "DPAD ↓";
             case KeyEvent.KEYCODE_DPAD_LEFT: return "DPAD ←";
             case KeyEvent.KEYCODE_DPAD_RIGHT: return "DPAD →";
-            case KeyEvent.KEYCODE_SPACE: return "SPACE";
-            case KeyEvent.KEYCODE_SHIFT_LEFT: return "L-SHIFT";
-            case KeyEvent.KEYCODE_CTRL_LEFT: return "L-CTRL";
             default: break;
         }
         String name = KeyEvent.keyCodeToString(keyCode);

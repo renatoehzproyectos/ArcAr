@@ -59,6 +59,7 @@ public class InputMapper {
         putDefault(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_BUTTON_R1);
         putDefault(e, Action.ACCELERATE, KeyEvent.KEYCODE_W);
         putDefault(e, Action.DECELERATE, KeyEvent.KEYCODE_S);
+        putDefault(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_BUTTON_Y);
         // Keyboard secondaries stored as extra list entries — see getKeycodes
         putDefaultExtra(e, Action.JUMP, KeyEvent.KEYCODE_SPACE);
         putDefaultExtra(e, Action.BOOST, KeyEvent.KEYCODE_SHIFT_LEFT);
@@ -67,6 +68,7 @@ public class InputMapper {
         putDefaultExtra(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_E);
         putDefaultExtra(e, Action.ACCELERATE, KeyEvent.KEYCODE_DPAD_UP);
         putDefaultExtra(e, Action.DECELERATE, KeyEvent.KEYCODE_DPAD_DOWN);
+        putDefaultExtra(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_C);
         if (!prefs.contains("infinite_boost")) e.putBoolean("infinite_boost", false);
         e.apply();
     }
@@ -98,6 +100,7 @@ public class InputMapper {
         appendKey(e, Action.AIR_ROLL_RIGHT, KeyEvent.KEYCODE_E);
         appendKey(e, Action.ACCELERATE, KeyEvent.KEYCODE_DPAD_UP);
         appendKey(e, Action.DECELERATE, KeyEvent.KEYCODE_DPAD_DOWN);
+        appendKey(e, Action.TOGGLE_BALL_CAM, KeyEvent.KEYCODE_C);
         e.putBoolean("seeded_extras_v3", true);
         e.apply();
     }
@@ -206,6 +209,20 @@ public class InputMapper {
         return sb.toString();
     }
 
+    /** True on the frame an action becomes held (edge). Call from UI thread after poll. */
+    private final boolean[] prevHeld = new boolean[Action.values().length];
+
+    public boolean consumePress(Action a) {
+        boolean now = held[a.ordinal()];
+        boolean edge = now && !prevHeld[a.ordinal()];
+        prevHeld[a.ordinal()] = now;
+        return edge;
+    }
+
+    public void syncPrevHeld() {
+        for (int i = 0; i < held.length; i++) prevHeld[i] = held[i];
+    }
+
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         keysDown.put(keyCode, true);
         recomputeHeld();
@@ -292,9 +309,31 @@ public class InputMapper {
 
     public static String keyCodeLabel(int keyCode) {
         if (keyCode == UNBOUND) return "—";
+        switch (keyCode) {
+            case KeyEvent.KEYCODE_BUTTON_A: return "A";
+            case KeyEvent.KEYCODE_BUTTON_B: return "B";
+            case KeyEvent.KEYCODE_BUTTON_X: return "X";
+            case KeyEvent.KEYCODE_BUTTON_Y: return "Y";
+            case KeyEvent.KEYCODE_BUTTON_L1: return "L1";
+            case KeyEvent.KEYCODE_BUTTON_R1: return "R1";
+            case KeyEvent.KEYCODE_BUTTON_L2: return "L2";
+            case KeyEvent.KEYCODE_BUTTON_R2: return "R2";
+            case KeyEvent.KEYCODE_BUTTON_THUMBL: return "L3";
+            case KeyEvent.KEYCODE_BUTTON_THUMBR: return "R3";
+            case KeyEvent.KEYCODE_BUTTON_START: return "START";
+            case KeyEvent.KEYCODE_BUTTON_SELECT: return "SELECT";
+            case KeyEvent.KEYCODE_DPAD_UP: return "DPAD ↑";
+            case KeyEvent.KEYCODE_DPAD_DOWN: return "DPAD ↓";
+            case KeyEvent.KEYCODE_DPAD_LEFT: return "DPAD ←";
+            case KeyEvent.KEYCODE_DPAD_RIGHT: return "DPAD →";
+            case KeyEvent.KEYCODE_SPACE: return "SPACE";
+            case KeyEvent.KEYCODE_SHIFT_LEFT: return "L-SHIFT";
+            case KeyEvent.KEYCODE_CTRL_LEFT: return "L-CTRL";
+            default: break;
+        }
         String name = KeyEvent.keyCodeToString(keyCode);
         if (name != null && name.startsWith("KEYCODE_")) {
-            return name.substring("KEYCODE_".length());
+            return name.substring("KEYCODE_".length()).replace('_', ' ');
         }
         return "KEY_" + keyCode;
     }

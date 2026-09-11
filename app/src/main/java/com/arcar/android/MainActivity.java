@@ -1,19 +1,19 @@
 package com.arcar.android;
 
 import android.app.Activity;
+import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.opengl.GLSurfaceView;
 
 /**
- * ArcAr Alpha 0.1 — minimal bootstrap.
- * GLSurfaceView → GameRenderer → GameEngine → Input.
- * No HUD, menus, settings, console or overlays.
+ * ArcAr Alpha 0.1 — bootstrap + gear button to settings.
  */
 public class MainActivity extends Activity {
 
@@ -41,6 +41,15 @@ public class MainActivity extends Activity {
         glView.setRenderer(renderer);
         glView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
 
+        View gear = findViewById(R.id.btn_settings);
+        if (gear != null) {
+            gear.bringToFront();
+            gear.setClickable(true);
+            gear.setFocusable(true);
+            gear.setOnClickListener(v ->
+                    startActivity(new Intent(this, SettingsActivity.class)));
+        }
+
         input = new InputMapper(this);
         new Thread(this::initNativeEngine, "ArcAr-Init").start();
     }
@@ -51,14 +60,11 @@ public class MainActivity extends Activity {
                 Log.e(TAG, "libarcar_jni.so missing: " + NativeBridge.getLoadError());
                 return;
             }
-
-            // Empty meshes dir → plane-only arena (no stadium meshes)
             boolean ok = NativeBridge.nativeInit("");
             if (!ok) {
                 Log.e(TAG, "nativeInit failed");
                 return;
             }
-
             engineReady = true;
             renderer.setEngineReady(true);
             try {
@@ -86,6 +92,10 @@ public class MainActivity extends Activity {
                 NativeBridge.nativeSetControls(
                         c.throttle, c.steer, c.pitch, c.yaw, c.roll,
                         c.jump, c.boost, c.handbrake);
+                // Edge-triggered ball cam toggle from bindings
+                if (input.consumePress(Action.TOGGLE_BALL_CAM)) {
+                    NativeBridge.nativeToggleBallCam();
+                }
             } catch (Throwable t) {
                 Log.w(TAG, "controls: " + t);
             }
@@ -96,10 +106,7 @@ public class MainActivity extends Activity {
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (engineReady) {
-            if (keyCode == KeyEvent.KEYCODE_C && event.getRepeatCount() == 0) {
-                NativeBridge.nativeToggleBallCam();
-                return true;
-            }
+            // Keep R = reset as hard shortcut
             if (keyCode == KeyEvent.KEYCODE_R && event.getRepeatCount() == 0) {
                 NativeBridge.nativeReset();
                 return true;
@@ -125,6 +132,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (glView != null) glView.onResume();
+        // Reload bindings after returning from settings
         input = new InputMapper(this);
         if (engineReady) {
             try {

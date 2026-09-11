@@ -3,6 +3,7 @@ package com.arcar.android;
 /**
  * Visual car body only. Physics stays BODY_C.
  * Fennec GLB: local +X is the long (nose) axis; maps to physics forward.
+ * VisualTransform only rotates/scales the mesh — never the hitbox or forward.
  */
 public final class CarCatalog {
     public static final class VisualTransform {
@@ -30,10 +31,11 @@ public final class CarCatalog {
         }
     }
 
-    // BODY_C hitbox length ~131 UU; target slightly under so mesh fits hitbox silhouette
+    // Visual-only: roll -90° (clockwise around local +X / nose) so the mesh
+    // sits upright on the ground. Physics forward/hitbox unchanged.
     public static final Entry FENNEC = new Entry(
             "fennec", "models/fennec.glb", 122f,
-            new VisualTransform(0f, 0f, 0f, 1f, 0f, 0f, 0f));
+            new VisualTransform(0f, 0f, -90f, 1f, 0f, 0f, 0f));
 
     public static Entry car() { return FENNEC; }
 }

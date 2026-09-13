@@ -29,8 +29,17 @@ public class AssetStore {
      * maps have no renderable geometry yet). Safe to call every frame — it's a
      * no-op unless the selection changed. targetMaxExtent is passed as <= 0 so
      * the map keeps its native Unreal-unit world coordinates.
+     *
+     * showMap should be false whenever the session isn't MODE_IMPORTED (e.g.
+     * baseplate) — otherwise a map selected in an earlier session lingers in
+     * SharedPreferences and silently reappears under an unrelated mode.
      */
-    public void loadMap(Context ctx) {
+    public void loadMap(Context ctx, boolean showMap) {
+        if (!showMap) {
+            map = null;
+            loadedMapId = null;
+            return;
+        }
         MapCatalog.Entry sel = MapCatalog.getSelected(ctx);
         String selId = sel != null ? sel.id : null;
         if (selId == null) {

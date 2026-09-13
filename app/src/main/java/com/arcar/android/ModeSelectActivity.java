@@ -132,9 +132,11 @@ public class ModeSelectActivity extends Activity {
             Toast.makeText(this, "Importado: " + e.name, Toast.LENGTH_SHORT).show();
             new AlertDialog.Builder(this)
                     .setTitle(e.name)
-                    .setMessage("Mapa BakkesMod importado.\n\n"
-                            + "Nota Alpha 0.1: la geometría .udk aún no se aplica a la física; "
-                            + "jugarás sobre baseplate con este mapa seleccionado para el futuro pipeline.")
+                    .setMessage("Mapa importado y convertido a modelo 3D.\n\n"
+                            + "Se va a renderizar visualmente tu mapa, pero la física de auto/pelota "
+                            + "todavía usa el arena estándar de RocketSim (no colisiona exactamente "
+                            + "con la geometría de tu mapa custom) — esa integración nativa es un paso "
+                            + "más grande, pendiente para una versión futura.")
                     .setPositiveButton("JUGAR", (d, w) ->
                             launchGame(MODE_IMPORTED, e.id, e.name))
                     .setNegativeButton("OK", null)

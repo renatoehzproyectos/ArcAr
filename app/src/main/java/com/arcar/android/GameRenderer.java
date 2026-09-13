@@ -51,6 +51,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
     private final AssetStore assets = new AssetStore();
     private Context appCtx;
+    private volatile boolean showImportedMap = false;
     private volatile boolean engineReady = false;
     private int width = 1, height = 1;
     private long lastNs;
@@ -63,6 +64,14 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
     public void setContext(Context ctx) {
         appCtx = ctx != null ? ctx.getApplicationContext() : null;
+    }
+
+    /** Whether this play session should render the user's imported map
+     * (MODE_IMPORTED) as opposed to baseplate/other modes — keeps a map
+     * selected in an earlier session from silently leaking into a session
+     * that didn't ask for it. */
+    public void setShowImportedMap(boolean show) {
+        showImportedMap = show;
     }
 
     @Override
@@ -191,7 +200,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                 Log.e(TAG, "Fennec load failed", t);
             }
             try {
-                assets.loadMap(appCtx);
+                assets.loadMap(appCtx, showImportedMap);
             } catch (Throwable t) {
                 Log.e(TAG, "Map load failed", t);
             }
@@ -228,7 +237,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             try { assets.loadCar(appCtx); } catch (Throwable ignored) {}
         }
         if (appCtx != null) {
-            try { assets.loadMap(appCtx); } catch (Throwable ignored) {} // cheap no-op unless selection changed
+            try { assets.loadMap(appCtx, showImportedMap); } catch (Throwable ignored) {} // cheap no-op unless selection changed
         }
 
         float[] s;

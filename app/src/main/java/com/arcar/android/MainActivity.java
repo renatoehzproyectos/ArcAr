@@ -38,6 +38,8 @@ public class MainActivity extends Activity {
         glView.setEGLContextClientVersion(2);
         renderer = new GameRenderer();
         renderer.setContext(this);
+        renderer.setShowImportedMap(ModeSelectActivity.MODE_IMPORTED.equals(
+                getIntent().getStringExtra(ModeSelectActivity.EXTRA_MODE)));
         renderer.setEngineReady(false);
         glView.setRenderer(renderer);
         glView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);

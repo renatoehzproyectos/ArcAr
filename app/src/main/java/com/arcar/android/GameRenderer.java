@@ -190,6 +190,11 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             } catch (Throwable t) {
                 Log.e(TAG, "Fennec load failed", t);
             }
+            try {
+                assets.loadMap(appCtx);
+            } catch (Throwable t) {
+                Log.e(TAG, "Map load failed", t);
+            }
         }
     }
 
@@ -222,6 +227,9 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         if (assets.car == null && appCtx != null) {
             try { assets.loadCar(appCtx); } catch (Throwable ignored) {}
         }
+        if (appCtx != null) {
+            try { assets.loadMap(appCtx); } catch (Throwable ignored) {} // cheap no-op unless selection changed
+        }
 
         float[] s;
         synchronized (snapLock) {
@@ -245,9 +253,13 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         currentCameraPos[2] = cz;
         Matrix.setLookAtM(view, 0, cx, cy, cz, tx, ty, tz, 0f, 0f, 1f);
 
-        GLES20.glUseProgram(program);
-        GLES20.glUniform3fv(uLightDir, 1, lightDir, 0);
-        drawGround();
+        if (assets.map != null && !assets.map.primitives.isEmpty()) {
+            drawMap();
+        } else {
+            GLES20.glUseProgram(program);
+            GLES20.glUniform3fv(uLightDir, 1, lightDir, 0);
+            drawGround();
+        }
 
         if (engineReady && s[29] > 0.5f) {
             float px = s[0], py = s[1], pz = s[2];
@@ -303,6 +315,68 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             Matrix.multiplyMM(orientedM, 0, model, 0, corrM, 0);
             System.arraycopy(orientedM, 0, model, 0, 16);
         }
+
+        GLES20.glUseProgram(meshProgram);
+        GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);
+        GLES20.glUniform3f(mUCameraPos, currentCameraPos[0], currentCameraPos[1], currentCameraPos[2]);
+
+        for (GlbModel.Primitive prim : glb.primitives) {
+            Matrix.multiplyMM(tmp, 0, view, 0, model, 0);
+            Matrix.multiplyMM(mvp, 0, proj, 0, tmp, 0);
+            GLES20.glUniformMatrix4fv(mUMVP, 1, false, mvp, 0);
+            GLES20.glUniformMatrix4fv(mUModel, 1, false, model, 0);
+            GLES20.glUniform4f(mUColor, prim.baseColor[0], prim.baseColor[1], prim.baseColor[2], prim.baseColor[3]);
+            GLES20.glUniform1f(mUAmbient, 0.4f);
+            GLES20.glUniform1f(mUEmissive, 0.05f);
+            GLES20.glUniform3f(mUEmissiveFactor, prim.emissiveFactor[0], prim.emissiveFactor[1], prim.emissiveFactor[2]);
+            GLES20.glUniform1f(mUMetallic, prim.metallic);
+            GLES20.glUniform1f(mURoughness, prim.roughness);
+
+            if ("BLEND".equals(prim.alphaMode)) {
+                GLES20.glEnable(GLES20.GL_BLEND);
+                GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+                GLES20.glDepthMask(false);
+            } else {
+                GLES20.glDisable(GLES20.GL_BLEND);
+                GLES20.glDepthMask(true);
+            }
+            if (prim.doubleSided) GLES20.glDisable(GLES20.GL_CULL_FACE);
+            else GLES20.glEnable(GLES20.GL_CULL_FACE);
+
+            boolean useTex = prim.textureId > 0;
+            GLES20.glUniform1f(mUUseTex, useTex ? 1f : 0f);
+            if (useTex) {
+                GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+                GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, prim.textureId);
+                GLES20.glUniform1i(mUTex, 0);
+            }
+            prim.interleaved.position(0);
+            GLES20.glEnableVertexAttribArray(mAPos);
+            GLES20.glVertexAttribPointer(mAPos, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(3);
+            GLES20.glEnableVertexAttribArray(mANrm);
+            GLES20.glVertexAttribPointer(mANrm, 3, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.interleaved.position(6);
+            GLES20.glEnableVertexAttribArray(mAUv);
+            GLES20.glVertexAttribPointer(mAUv, 2, GLES20.GL_FLOAT, false, 32, prim.interleaved);
+            prim.indices.position(0);
+            GLES20.glDrawElements(GLES20.GL_TRIANGLES, prim.indexCount, prim.indexType, prim.indices);
+        }
+        GLES20.glDisable(GLES20.GL_BLEND);
+        GLES20.glDepthMask(true);
+        GLES20.glEnable(GLES20.GL_CULL_FACE);
+        GLES20.glUseProgram(program);
+    }
+
+    /**
+     * Draws the imported map GLB at identity transform: its vertices are
+     * already real Unreal-unit world coordinates (GlbModel.load was called
+     * with targetMaxExtent <= 0, so no recenter/rescale happened), so they
+     * line up with the ball/car physics as-is.
+     */
+    private void drawMap() {
+        GlbModel glb = assets.map;
+        Matrix.setIdentityM(model, 0);
 
         GLES20.glUseProgram(meshProgram);
         GLES20.glUniform3f(mULight, lightDir[0], lightDir[1], lightDir[2]);

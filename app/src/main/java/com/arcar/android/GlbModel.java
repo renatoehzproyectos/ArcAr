@@ -66,6 +66,22 @@ public class GlbModel {
         }
     }
 
+    /**
+     * Load a GLB from an arbitrary file on disk (imported map). Pass
+     * targetMaxExtent &lt;= 0 to keep the model's native coordinates as-is
+     * (no recenter/rescale) — required for maps, since their vertices are
+     * already in the same Unreal-unit world space as the ball/car physics.
+     */
+    public static GlbModel load(java.io.File file, float targetMaxExtent) {
+        try {
+            byte[] data = readAll(new java.io.FileInputStream(file));
+            return parse(data, targetMaxExtent);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to load " + file, e);
+            return null;
+        }
+    }
+
     private static byte[] readAll(InputStream in) throws Exception {
         ByteArrayOutputStream bos = new ByteArrayOutputStream();
         byte[] buf = new byte[16384];
@@ -332,8 +348,10 @@ public class GlbModel {
             }
         }
 
-        // Normalize: center + scale
-        if (!allPos.isEmpty()) {
+        // Normalize: center + scale. Skipped when targetMaxExtent <= 0 (maps):
+        // those vertices are already real Unreal-unit world coordinates and
+        // must line up with the ball/car physics as extracted, unmodified.
+        if (!allPos.isEmpty() && targetMaxExtent > 0f) {
             float minX=1e9f,minY=1e9f,minZ=1e9f,maxX=-1e9f,maxY=-1e9f,maxZ=-1e9f;
             for (float[] p : allPos) {
                 minX=Math.min(minX,p[0]); minY=Math.min(minY,p[1]); minZ=Math.min(minZ,p[2]);
@@ -358,6 +376,14 @@ public class GlbModel {
             }
 
             // Upload textures on GL thread — store raw bytes temporarily via textureId marker
+        } else if (!allPos.isEmpty()) {
+            float minX=1e9f,minY=1e9f,minZ=1e9f,maxX=-1e9f,maxY=-1e9f,maxZ=-1e9f;
+            for (float[] p : allPos) {
+                minX=Math.min(minX,p[0]); minY=Math.min(minY,p[1]); minZ=Math.min(minZ,p[2]);
+                maxX=Math.max(maxX,p[0]); maxY=Math.max(maxY,p[1]); maxZ=Math.max(maxZ,p[2]);
+            }
+            float maxExt = Math.max(maxX-minX, Math.max(maxY-minY, maxZ-minZ));
+            model.radius = maxExt * 0.5f;
             model._imageBytes = imageBytes;
         }
         Log.i(TAG, "Loaded primitives=" + model.primitives.size() + " radius=" + model.radius);

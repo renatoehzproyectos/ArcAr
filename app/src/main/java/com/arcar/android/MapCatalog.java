@@ -49,13 +49,17 @@ public final class MapCatalog {
         if (dirs == null || dirs.length == 0) return Collections.emptyList();
         List<Entry> out = new ArrayList<>();
         for (File dir : dirs) {
+            // Prefer an extracted .glb (real geometry) over the raw .udk/.upk.
+            File[] glbs = dir.listFiles((d, n) -> n.toLowerCase().endsWith(".glb"));
             File[] pkgs = dir.listFiles((d, n) -> {
                 String lower = n.toLowerCase();
                 return lower.endsWith(".udk") || lower.endsWith(".upk");
             });
-            if (pkgs != null && pkgs.length > 0) {
-                String name = pkgs[0].getName().replaceAll("\\.(udk|upk)$", "");
-                out.add(new Entry(dir.getName(), name, pkgs[0].getName()));
+            File chosen = (glbs != null && glbs.length > 0) ? glbs[0]
+                    : (pkgs != null && pkgs.length > 0) ? pkgs[0] : null;
+            if (chosen != null) {
+                String name = chosen.getName().replaceAll("\\.(glb|udk|upk)$", "");
+                out.add(new Entry(dir.getName(), name, chosen.getName()));
             }
         }
         Collections.sort(out, (a, b) -> a.name.compareToIgnoreCase(b.name));
@@ -80,8 +84,10 @@ public final class MapCatalog {
     }
 
     /**
-     * Import a BakkesMod map zip from a content Uri (SAF).
-     * Expects at least one .udk or .upk entry inside the zip.
+     * Import a map zip from a content Uri (SAF).
+     * Accepts either a real, extracted .glb (from rl-mobile-extractor — this
+     * is what actually gets rendered) or a raw BakkesMod .udk/.upk (kept for
+     * future extraction, not currently rendered).
      * @return imported Entry or null on failure
      */
     public static Entry importZip(Context ctx, Uri uri) throws Exception {
@@ -106,6 +112,7 @@ public final class MapCatalog {
         }
 
         String foundPkg = null;
+        String foundGlb = null;
         try (InputStream in = ctx.getContentResolver().openInputStream(uri);
              ZipInputStream zis = new ZipInputStream(in)) {
             if (in == null) throw new IllegalStateException("No se pudo abrir el archivo");
@@ -117,7 +124,14 @@ public final class MapCatalog {
                 int li = name.lastIndexOf('/');
                 if (li >= 0) name = name.substring(li + 1);
                 String lower = name.toLowerCase();
-                if (!(lower.endsWith(".udk") || lower.endsWith(".upk"))) {
+                boolean isGlb = lower.endsWith(".glb");
+                boolean isPkg = lower.endsWith(".udk") || lower.endsWith(".upk");
+                if (!isGlb && !isPkg) {
+                    zis.closeEntry();
+                    continue;
+                }
+                // Skip if we already have this kind (keep first of each kind).
+                if ((isGlb && foundGlb != null) || (isPkg && foundPkg != null)) {
                     zis.closeEntry();
                     continue;
                 }
@@ -126,22 +140,22 @@ public final class MapCatalog {
                     int n;
                     while ((n = zis.read(buf)) > 0) fos.write(buf, 0, n);
                 }
-                foundPkg = name;
+                if (isGlb) foundGlb = name; else foundPkg = name;
                 zis.closeEntry();
-                // keep first package only for now
-                break;
+                if (foundGlb != null) break; // .glb is all we need to render
             }
         }
 
-        if (foundPkg == null) {
+        String chosen = foundGlb != null ? foundGlb : foundPkg;
+        if (chosen == null) {
             // cleanup empty dir
             destDir.delete();
             throw new IllegalArgumentException(
-                    "El ZIP no contiene un mapa BakkesMod (.udk / .upk)");
+                    "El ZIP no contiene un mapa (.glb extraído o .udk / .upk)");
         }
 
-        Log.i(TAG, "Imported map " + safeId + " pkg=" + foundPkg);
-        Entry e = new Entry(safeId, foundPkg.replaceAll("\\.(udk|upk)$", ""), foundPkg);
+        Log.i(TAG, "Imported map " + safeId + " file=" + chosen);
+        Entry e = new Entry(safeId, chosen.replaceAll("\\.(glb|udk|upk)$", ""), chosen);
         setSelectedId(ctx, e.id);
         return e;
     }
